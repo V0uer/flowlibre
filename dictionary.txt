@@ -1,0 +1,7 @@
+# Diccionario personalizado de FlowLibre
+# Un término por línea. Nombres propios, marcas, jerga técnica.
+# El corrector los escribirá exactamente como aparecen aquí.
+# Las líneas que empiezan con # se ignoran.
+FlowLibre
+Shopify
+Valorant

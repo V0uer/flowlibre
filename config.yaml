@@ -1,0 +1,64 @@
+# FlowLibre — configuración
+# Edita y guarda; reinicia la app (o usa el menú de la bandeja) para aplicar.
+
+# Atajo global. Ejemplos: "windows+ctrl", "ctrl+alt+space", "f9"
+hotkey: "windows+ctrl"
+
+# "push_to_talk": graba mientras mantienes el atajo presionado.
+# "toggle": un toque inicia la grabación, otro toque la detiene.
+# "hibrido": mantener presionado = push-to-talk; DOBLE toque rápido = el micro
+#            queda fijo grabando; un toque más lo detiene.
+hotkey_mode: "hibrido"
+
+# --- 2º atajo: "modo Discord" (dictar y anteponer un prefijo) ---
+# Al usar este atajo, la voz se transcribe EN CRUDO (sin limpieza IA) y se le
+# antepone music_prefix. Ideal para pedir canciones: dices el nombre y sale
+# "m!p <canción>" listo para mandar. Usa el mismo hotkey_mode de arriba.
+# Deja music_hotkey vacío ("") para desactivarlo.
+music_hotkey: windows+alt
+music_prefix: "m!p "
+# Tras escribir el comando, ¿mandar Enter para enviarlo solo? true / false
+music_send_enter: true
+
+# Motor de limpieza activo:
+#   "ollama" = Motor A, local y gratis (requiere Ollama instalado)
+#   "claude" = Motor B, API de Claude (requiere ANTHROPIC_API_KEY) — por defecto
+engine: "claude"
+
+# Modo de formato: "mensaje" | "email" | "notas" | "crudo"
+# "crudo" escribe la transcripción tal cual, sin pasar por el LLM.
+format_mode: "mensaje"
+
+# Idioma de transcripción: "auto" | "es" | "en"
+language: "auto"
+
+# Micrófono: null = dispositivo por defecto de Windows.
+# También acepta índice numérico o parte del nombre (ej. "Yeti").
+microphone: Wave Link MicrophoneFX (Elgato
+
+# --- Whisper (transcripción local en GPU) ---
+# Modelos: "small" (~0.5GB VRAM) | "medium" (~1.5GB, recomendado) | "large-v3" (~3.5GB)
+whisper_model: "medium"
+whisper_compute_type: "int8_float16"
+
+# --- Motor A: Ollama ---
+ollama_url: "http://localhost:11434"
+ollama_model: "qwen2.5:14b-instruct"
+# Cuánto tiempo mantiene Ollama el modelo cargado en VRAM tras cada uso.
+#   "5m"  = queda listo 5 minutos (respuesta instantánea en dictados seguidos)
+#   "0"   = descarga el modelo tras CADA uso → libera ~9GB de VRAM (útil si vas
+#           a jugar), a cambio de ~2-3s de recarga en el siguiente dictado.
+ollama_keep_alive: "5m"
+
+# --- Motor B: Claude (opcional) ---
+# La API key se lee SOLO de la variable de entorno ANTHROPIC_API_KEY.
+claude_model: "claude-haiku-4-5"   # alternativa: "claude-sonnet-5"
+# Si el Motor B falla (sin red, sin saldo, rate limit), ¿caer al Motor A?
+# (false: sin Ollama instalado no hay fallback; en caso de fallo escribe la
+#  transcripción cruda de Whisper tal cual)
+claude_fallback_to_ollama: false
+
+# --- Inyección de texto ---
+# "clipboard": pega con Ctrl+V y restaura tu portapapeles (soporta acentos/emoji).
+# "typing": simula tecleo carácter por carácter (más lento, para apps que bloquean pegado).
+inject_method: "clipboard"

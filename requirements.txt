@@ -1,0 +1,28 @@
+# --- Transcripción local (GPU) ---
+faster-whisper>=1.1.0
+# DLLs de CUDA vía pip (sin instalar CUDA Toolkit global)
+nvidia-cublas-cu12
+nvidia-cudnn-cu12>=9.0
+
+# --- Audio ---
+sounddevice>=0.4.6
+numpy>=1.26
+
+# --- Hotkey global + tecleo simulado ---
+keyboard>=0.13.5
+
+# --- Portapapeles nativo de Windows (guardar/restaurar) ---
+pywin32>=306
+
+# --- Ícono de bandeja ---
+pystray>=0.19.5
+Pillow>=10.0
+
+# --- Motor A: Ollama (HTTP local) ---
+requests>=2.31
+
+# --- Motor B: API de Claude (opcional, apagado por defecto) ---
+anthropic>=0.40
+
+# --- Config ---
+PyYAML>=6.0

@@ -1,0 +1,9 @@
+{
+  "_comentario": "Comandos de voz. 'insert' reemplaza la frase dentro del dictado por el texto dado. 'delete_last' y 'uppercase_last' solo funcionan si el dictado completo es el comando.",
+  "nueva línea": { "action": "insert", "text": "\n" },
+  "nueva linea": { "action": "insert", "text": "\n" },
+  "punto y aparte": { "action": "insert", "text": ".\n" },
+  "borra eso": { "action": "delete_last" },
+  "en mayúsculas": { "action": "uppercase_last" },
+  "en mayusculas": { "action": "uppercase_last" }
+}
