@@ -59,7 +59,12 @@ def test_corta_forzado_al_maximo_sin_silencio():
 
 def test_los_trozos_se_traslapan():
     ch = Chunker(overlap_s=0.5)
-    alimentar(ch, np.concatenate([habla(9), silencio(0.6)]))
+    # A diferencia de la version anterior de este test, agregamos habla
+    # nueva DESPUES del corte: asi flush() tiene algo que devolver (la cola
+    # de 0.5s de traslape mas la voz nueva). Si solo hubiera silencio tras
+    # el corte, flush() debe venir vacio (ver test_flush_tras_corte_no_repite_audio_transcrito) —
+    # ese es justo el bug que arregla la compuerta de voz (I2).
+    alimentar(ch, np.concatenate([habla(9), silencio(0.6), habla(0.3)]))
     resto = ch.flush()
     # Tras cerrar un trozo, el siguiente arranca con 0.5s del anterior
     assert len(resto) >= 0.5 * SAMPLE_RATE
@@ -74,3 +79,81 @@ def test_flush_devuelve_lo_pendiente():
 
 def test_flush_en_vacio_no_truena():
     assert len(Chunker().flush()) == 0
+
+
+def test_invariante_cobertura_y_traslape_exacto():
+    """La propiedad que de verdad le importa al autor: ni una muestra perdida,
+    ni una duplicada fuera del traslape declarado. Se verifica con
+    comparacion exacta de arreglos (habla()/silencio() son deterministas),
+    no con conteos aproximados."""
+    ch = Chunker(overlap_s=0.5)
+    original = np.concatenate(
+        [habla(9), silencio(0.6), habla(9), silencio(0.6), habla(5)]
+    )
+    trozos = alimentar(ch, original)
+    trozos.append(ch.flush())
+    assert len(trozos) >= 2  # al menos dos cortes naturales + el remanente
+
+    overlap = ch.overlap_samples
+    reconstruido = trozos[0]
+    for trozo in trozos[1:]:
+        if overlap:
+            # El siguiente trozo debe arrancar EXACTAMENTE con la cola del anterior.
+            assert np.array_equal(trozo[:overlap], reconstruido[-overlap:])
+        reconstruido = np.concatenate([reconstruido, trozo[overlap:]])
+
+    assert reconstruido.shape[0] == original.shape[0]
+    assert np.array_equal(reconstruido, original)
+
+
+def test_silencio_prolongado_no_emite_trozos():
+    ch = Chunker()
+    trozos = alimentar(ch, silencio(60))
+    assert trozos == []
+    assert len(ch.flush()) == 0
+
+
+def test_flush_tras_corte_no_repite_audio_transcrito():
+    ch = Chunker(overlap_s=0.5)
+    alimentar(ch, np.concatenate([habla(9), silencio(0.6)]))
+    resto = ch.flush()
+    # La cola de traslape ya salio dentro del trozo emitido; si no llego
+    # voz nueva despues del corte, flush() no debe repetirla.
+    assert len(resto) == 0
+
+
+def test_nan_no_bloquea_corte_natural():
+    ruido_nan = np.full(int(0.6 * SAMPLE_RATE), np.nan, dtype="float32")
+    ch = Chunker()
+    trozos = alimentar(ch, np.concatenate([habla(9), ruido_nan]))
+    assert len(trozos) == 1
+    assert np.isfinite(trozos[0]).all()
+
+
+def test_overlap_excesivo_no_degenera():
+    ch = Chunker(overlap_s=8.0)
+    trozos = alimentar(ch, habla(30))
+    # Antes del clamp esto daba 51 trozos (uno cada 0.4s). Con el clamp,
+    # el comportamiento vuelve a ser el de un troceador sano.
+    assert len(trozos) <= 3
+
+
+def test_stats_cuenta_cortes_naturales_y_forzados():
+    ch = Chunker()
+    alimentar(ch, np.concatenate([habla(9), silencio(0.6), habla(2)]))
+    alimentar(ch, habla(30))
+    stats = ch.stats()
+    assert stats["naturales"] == 1
+    assert stats["forzados"] == 1
+
+
+@pytest.mark.parametrize("bloque_s", [0.008, 0.026, 0.064])
+def test_corte_natural_con_distintos_tamanos_de_bloque(bloque_s):
+    ch = Chunker()
+    trozos = alimentar(
+        ch,
+        np.concatenate([habla(9), silencio(0.6), habla(2)]),
+        bloque_s=bloque_s,
+    )
+    assert len(trozos) == 1
+    assert len(trozos[0]) >= 9 * SAMPLE_RATE
