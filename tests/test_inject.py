@@ -23,3 +23,97 @@ def test_tolerates_clipboard_read_failures(monkeypatch):
     estados = iter([None, None, "hola"])
     monkeypatch.setattr(inject, "_get_clipboard_text", lambda: next(estados, "hola"))
     assert inject.wait_for_clipboard("hola", timeout_s=1.0) is True
+
+
+# --- inject_text: secuencia completa (guardar -> escribir -> sondear -> pegar/teclear -> restaurar) ---
+#
+# `wait_for_clipboard` ya tiene su propia cobertura de timing arriba. Aqui se
+# monkeypatchea directo para poder probar rapido y sin ambiguedad la logica de
+# ramificacion de `inject_text`: cuando pega, cuando reintenta, cuando cae a
+# teclear, y que el portapapeles del autor siempre quede como estaba.
+
+
+def test_inject_text_happy_path_pastes_and_restores_original(monkeypatch):
+    state = {"clipboard": "lo que el autor tenia copiado"}
+    calls = []
+
+    monkeypatch.setattr(inject, "_get_clipboard_text", lambda: state["clipboard"])
+    monkeypatch.setattr(inject, "_set_clipboard_text", lambda t: state.__setitem__("clipboard", t))
+    monkeypatch.setattr(inject, "wait_for_clipboard", lambda expected: True)
+    monkeypatch.setattr(inject.keyboard, "send", lambda combo: calls.append(("send", combo)))
+    monkeypatch.setattr(inject.keyboard, "write", lambda t, delay=0: calls.append(("write", t)))
+    monkeypatch.setattr(inject.time, "sleep", lambda s: None)
+
+    inject.inject_text("hola mundo")
+
+    assert calls == [("send", "ctrl+v")]
+    assert state["clipboard"] == "lo que el autor tenia copiado"
+
+
+def test_inject_text_retries_once_and_still_pastes(monkeypatch):
+    resultados = iter([False, True])
+    calls = []
+    state = {"clipboard": "lo que el autor tenia copiado"}
+
+    monkeypatch.setattr(inject, "_get_clipboard_text", lambda: state["clipboard"])
+    monkeypatch.setattr(
+        inject,
+        "_set_clipboard_text",
+        lambda t: (calls.append(("set", t)), state.__setitem__("clipboard", t)),
+    )
+    monkeypatch.setattr(inject, "wait_for_clipboard", lambda expected: next(resultados))
+    monkeypatch.setattr(inject.keyboard, "send", lambda combo: calls.append(("send", combo)))
+    monkeypatch.setattr(inject.keyboard, "write", lambda t, delay=0: calls.append(("write", t)))
+    monkeypatch.setattr(inject.time, "sleep", lambda s: None)
+
+    inject.inject_text("hola mundo")
+
+    # se reintenta _set_clipboard_text una vez antes de pegar (mas la restauracion
+    # final del portapapeles original); nunca se teclea
+    sets_del_texto = [c for c in calls if c == ("set", "hola mundo")]
+    assert len(sets_del_texto) == 2
+    assert ("send", "ctrl+v") in calls
+    assert not any(c[0] == "write" for c in calls)
+    assert state["clipboard"] == "lo que el autor tenia copiado"
+
+
+def test_inject_text_falls_back_to_typing_when_clipboard_never_settles(monkeypatch):
+    calls = []
+    state = {"clipboard": "lo que el autor tenia copiado"}
+
+    monkeypatch.setattr(inject, "_get_clipboard_text", lambda: state["clipboard"])
+    # otra app tiene tomado el portapapeles: nuestros _set_clipboard_text nunca "pegan"
+    monkeypatch.setattr(inject, "_set_clipboard_text", lambda t: calls.append(("set", t)))
+    monkeypatch.setattr(inject, "wait_for_clipboard", lambda expected: False)
+    monkeypatch.setattr(inject.keyboard, "send", lambda combo: calls.append(("send", combo)))
+    monkeypatch.setattr(inject.keyboard, "write", lambda t, delay=0: calls.append(("write", t)))
+    monkeypatch.setattr(inject.time, "sleep", lambda s: None)
+
+    inject.inject_text("hola mundo")
+
+    assert not any(c[0] == "send" for c in calls)
+    assert ("write", "hola mundo") in calls
+    # el texto dictado no debe quedar pegado en el portapapeles del autor
+    assert state["clipboard"] == "lo que el autor tenia copiado"
+
+
+def test_inject_text_without_original_clipboard_skips_restore(monkeypatch):
+    calls = []
+    state = {"clipboard": None}
+
+    def fake_set(t):
+        calls.append(("set", t))
+        state["clipboard"] = t
+
+    monkeypatch.setattr(inject, "_get_clipboard_text", lambda: state["clipboard"])
+    monkeypatch.setattr(inject, "_set_clipboard_text", fake_set)
+    monkeypatch.setattr(inject, "wait_for_clipboard", lambda expected: True)
+    monkeypatch.setattr(inject.keyboard, "send", lambda combo: calls.append(("send", combo)))
+    monkeypatch.setattr(inject.keyboard, "write", lambda t, delay=0: calls.append(("write", t)))
+    monkeypatch.setattr(inject.time, "sleep", lambda s: None)
+
+    inject.inject_text("hola mundo")
+
+    # no habia portapapeles original -> una sola llamada a _set_clipboard_text
+    # (la que pega el texto dictado), ninguna de restauracion
+    assert [c for c in calls if c[0] == "set"] == [("set", "hola mundo")]
