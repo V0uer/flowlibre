@@ -36,6 +36,7 @@ class FlowLibreApp:
         )
         self.hotkeys: HotkeyManager | None = None
         self.music_hotkeys: HotkeyManager | None = None
+        self.cleaner = None      # motor de limpieza activo, cacheado (ver _get_cleaner)
         self._dashboard = None
         self.enabled = True
         self._active_prefix = ""     # prefijo del dictado en curso ("" = dictado normal)
@@ -74,22 +75,34 @@ class FlowLibreApp:
         )
         self.music_hotkeys.register()
 
+    def _get_cleaner(self):
+        """Motor de limpieza activo, cacheado entre dictados.
+
+        get_cleaner() construye un objeto nuevo en cada llamada; cachearlo aquí
+        es lo que hace que el cliente HTTP (y su conexión TLS) sobreviva entre
+        dictados, en vez de descartarse en la línea siguiente a como se crea.
+        """
+        if self.cleaner is None:
+            self.cleaner = get_cleaner(self.config)
+        return self.cleaner
+
     def _check_engine(self) -> None:
-        problem = get_cleaner(self.config).check_ready()
+        cleaner = self._get_cleaner()
+        problem = cleaner.check_ready()
         if problem:
             print(f"[FlowLibre] Aviso del motor de limpieza:\n{problem}")
         # Abrir el cliente HTTP ahora, para no pagar el handshake TLS en el
         # primer dictado.
-        cleaner = get_cleaner(self.config)
         if hasattr(cleaner, "_get_client"):
             try:
                 cleaner._get_client()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[FlowLibre] No se pudo precalentar el Motor B: {type(e).__name__}: {e}")
 
     def reload_config(self) -> None:
         self.config.reload()
         self.commands.reload()
+        self.cleaner = None       # se reconstruye al cambiar de motor/modelo/timeout
         if self.hotkeys:
             self.hotkeys.unregister()
         self.recorder = Recorder(self.config.microphone)
@@ -232,7 +245,7 @@ class FlowLibreApp:
         if mode == "crudo":
             clean_text = raw_text
         else:
-            cleaner = get_cleaner(self.config)
+            cleaner = self._get_cleaner()
             engine_used = cleaner.name
             try:
                 clean_text = cleaner.clean(raw_text, mode)

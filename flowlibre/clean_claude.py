@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 from .clean import Cleaner, CleanerError, strip_llm_wrapping
 from .config import load_dictionary
@@ -41,7 +42,8 @@ def classify_error(status: int, body: dict) -> str:
     if status == 403:
         return ("La API de Claude rechazó la petición (¿sin saldo?). "
                 "Revisa Billing en console.anthropic.com o cambia a Motor A.")
-    detalle = body.get("error", {}).get("message", "")
+    err = body.get("error") if isinstance(body, dict) else None
+    detalle = err.get("message", "") if isinstance(err, dict) else ""
     return f"Error de la API de Claude ({status}): {detalle}"
 
 
@@ -69,9 +71,26 @@ class ClaudeCleaner(Cleaner):
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },
-                timeout=self.config.claude_timeout_s,
             )
         return self._client
+
+    def _timeout_for(self, max_tokens: int):
+        """Plazos de red para una generacion de `max_tokens` tokens.
+
+        Sin streaming, el cuerpo no empieza a llegar hasta que el modelo termino,
+        asi que el plazo de LECTURA tiene que cubrir la generacion completa. Haiku
+        ronda los 60 tokens/s; el margen fijo absorbe la cola de la API.
+        `claude_timeout_s` pasa a gobernar solo la conexion, que es lo que de
+        verdad se cuelga cuando no hay red.
+        """
+        import httpx
+        base = self.config.claude_timeout_s
+        return httpx.Timeout(
+            connect=base,
+            read=max(base, max_tokens / 60.0 + 5.0),
+            write=base,
+            pool=base,
+        )
 
     def clean(self, raw_text: str, format_mode: str) -> str:
         problem = self.check_ready()
@@ -93,9 +112,10 @@ class ClaudeCleaner(Cleaner):
 
         import httpx
 
+        max_tokens = estimate_max_tokens(raw_text)
         payload = {
             "model": self.config.claude_model,
-            "max_tokens": estimate_max_tokens(raw_text),
+            "max_tokens": max_tokens,
             "system": [{
                 "type": "text",
                 "text": system_text,
@@ -103,13 +123,23 @@ class ClaudeCleaner(Cleaner):
             }],
             "messages": messages,
         }
+        timeout = self._timeout_for(max_tokens)
 
         r = None
         last_error = None
         for intento in range(2):     # un reintento: la mayoria de las colas largas son transitorias
             try:
-                r = self._get_client().post(self.API_URL, json=payload)
-            except (httpx.TimeoutException, httpx.TransportError) as e:
+                r = self._get_client().post(self.API_URL, json=payload, timeout=timeout)
+            except httpx.ReadTimeout as e:
+                # La generacion ya ocurrio (y ya se cobro): reintentarla pagaria
+                # dos veces por lo mismo, asi que no hay segundo intento.
+                raise CleanerError(
+                    "La API de Claude tardó demasiado en responder. Si te pasa "
+                    "seguido con dictados largos, sube claude_timeout_s en config.yaml."
+                ) from e
+            except httpx.RequestError as e:
+                # Conexion caida, DNS, TLS, decodificacion, redirects: son
+                # transitorios, valen un reintento.
                 last_error = e
                 if intento == 0:
                     continue
@@ -117,21 +147,55 @@ class ClaudeCleaner(Cleaner):
                     "La API de Claude no respondió a tiempo. Verifica tu red o usa "
                     "Motor A (offline)."
                 ) from last_error
+
             if r.status_code == 200:
                 break
-            # 429 y 5xx son transitorios: valen un reintento. El resto, no.
-            if r.status_code in (429, 500, 502, 503, 529) and intento == 0:
-                continue
-            raise CleanerError(classify_error(r.status_code, r.json()))
 
-        if r is None or r.status_code != 200:
+            try:
+                body = r.json()
+            except ValueError:
+                body = {}
+            if not isinstance(body, dict):
+                body = {}
+
+            if r.status_code == 429 and intento == 0:
+                # Reintentar un rate limit de inmediato casi siempre devuelve
+                # otro 429. Se respeta retry-after si es corto; si es largo, o
+                # si no viene, no vale la pena seguir esperando el dictado.
+                retry_after = r.headers.get("retry-after")
+                wait = None
+                if retry_after is not None:
+                    try:
+                        wait = float(retry_after)
+                    except ValueError:
+                        wait = None
+                if wait is not None and wait > 2:
+                    raise CleanerError(classify_error(r.status_code, body))
+                time.sleep(wait if wait is not None else 0.5)
+                continue
+            # 5xx son transitorios: valen un reintento con un backoff fijo.
+            if r.status_code in (500, 502, 503, 529) and intento == 0:
+                time.sleep(0.5)
+                continue
+            raise CleanerError(classify_error(r.status_code, body))
+
+        # Llegar aquí implica r.status_code == 200: cada otra rama del bucle
+        # termina en `raise`.
+        try:
+            data = r.json()
+        except ValueError:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+
+        if data.get("stop_reason") == "max_tokens":
             raise CleanerError(
-                "La API de Claude no respondió a tiempo. Verifica tu red o usa "
-                "Motor A (offline)."
+                "La limpieza salió incompleta (dictado demasiado largo). "
+                "Se escribe la transcripción sin limpiar."
             )
 
         text = next(
-            (b["text"] for b in r.json().get("content", []) if b.get("type") == "text"), ""
+            (b["text"] for b in data.get("content", []) if b.get("type") == "text"), ""
         )
         if not text.strip():
             raise CleanerError("La API de Claude devolvió una respuesta vacía.")
