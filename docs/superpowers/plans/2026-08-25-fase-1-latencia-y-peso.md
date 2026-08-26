@@ -340,7 +340,24 @@ whisper_beam_size: 1
 .venv/Scripts/python.exe tools/bench.py
 ```
 
-Expected: el WAV de 21 s baja de ~5 s a ~1.2 s en la columna `whisper`. Si no baja al menos 2x, parar y revisar que el modelo turbo se haya descargado (la primera corrida lo baja y tarda varios minutos).
+Comparar contra la línea base **medida** en la Task 1
+(`docs/superpowers/baseline-2026-08-25.txt`), columna `whisper`:
+
+| archivo | línea base (medium, beam 5) | esperado (turbo, beam 1) |
+|---|---:|---:|
+| `voz_6s.wav` | 0.18 s | 0.10 s o menos |
+| `voz_21s.wav` | 0.69 s | 0.35 s o menos |
+| `voz_60s.wav` | 3.69 s | 1.50 s o menos |
+
+**Los números absolutos dependen mucho de qué tan ocupada esté la GPU** — el autor juega en
+esa máquina, y la misma medición varía hasta 7x según lo que haya corriendo. Antes de
+medir, correr `nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader` y anotar el
+valor en el reporte.
+
+**El criterio que decide es la razón, no el valor absoluto:** `voz_60s.wav` debe mejorar
+al menos **2x** contra la línea base. Si mejora menos, parar y revisar que el modelo turbo
+se haya descargado de verdad (la primera corrida lo baja y tarda varios minutos) y que no
+se haya caído a CPU — un mensaje `GPU no disponible` en la salida delata eso último.
 
 - [ ] **Step 9: Commit**
 
