@@ -1,4 +1,9 @@
-from flowlibre.clean_claude import ClaudeCleaner, classify_error, estimate_max_tokens
+from flowlibre.clean_claude import (
+    ClaudeCleaner,
+    _parse_retry_after,
+    classify_error,
+    estimate_max_tokens,
+)
 
 
 class _FakeConfig:
@@ -77,3 +82,28 @@ def test_timeout_connect_usa_claude_timeout_s():
     cleaner = ClaudeCleaner(_FakeConfig(claude_timeout_s=7.5))
     t = cleaner._timeout_for(2000)
     assert t.connect == 7.5
+
+
+def test_retry_after_negativo_se_descarta():
+    # Un retry-after de -1 no debe llegar a time.sleep(-1), que revienta con
+    # ValueError fuera de CleanerError (misma clase de fuga que C-1).
+    assert _parse_retry_after("-1") is None
+
+
+def test_retry_after_nan_se_descarta():
+    assert _parse_retry_after("nan") is None
+
+
+def test_retry_after_numero_valido_se_respeta():
+    assert _parse_retry_after("60") == 60.0
+    assert _parse_retry_after("1") == 1.0
+
+
+def test_retry_after_ausente_es_none():
+    assert _parse_retry_after(None) is None
+
+
+def test_retry_after_fecha_http_se_descarta():
+    # El header tambien admite una fecha HTTP en vez de segundos; no la
+    # soportamos, pero tampoco debe reventar.
+    assert _parse_retry_after("Wed, 21 Oct 2026 07:28:00 GMT") is None

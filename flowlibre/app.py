@@ -81,18 +81,30 @@ class FlowLibreApp:
         get_cleaner() construye un objeto nuevo en cada llamada; cachearlo aquí
         es lo que hace que el cliente HTTP (y su conexión TLS) sobreviva entre
         dictados, en vez de descartarse en la línea siguiente a como se crea.
+
+        Se reconstruye si cambió el motor activo, porque el menú de la bandeja
+        escribe config.engine directo (Config.set) sin pasar por
+        reload_config(): sin este chequeo, cambiar de motor desde la bandeja
+        no surtiría efecto hasta reiniciar la app.
         """
-        if self.cleaner is None:
+        if self.cleaner is None or self.cleaner.name != self.config.engine:
+            self._close_cleaner()
             self.cleaner = get_cleaner(self.config)
         return self.cleaner
+
+    def _close_cleaner(self) -> None:
+        """Libera el cleaner cacheado (cierra su cliente HTTP si tiene uno)."""
+        if self.cleaner is not None:
+            self.cleaner.close()
 
     def _check_engine(self) -> None:
         cleaner = self._get_cleaner()
         problem = cleaner.check_ready()
         if problem:
             print(f"[FlowLibre] Aviso del motor de limpieza:\n{problem}")
-        # Abrir el cliente HTTP ahora, para no pagar el handshake TLS en el
-        # primer dictado.
+        # No precalienta TLS (httpx no conecta hasta el primer request real):
+        # esto sirve para detectar temprano que falta httpx, que falta la key,
+        # o que la config está incompleta, sin esperar al primer dictado.
         if hasattr(cleaner, "_get_client"):
             try:
                 cleaner._get_client()
@@ -102,6 +114,7 @@ class FlowLibreApp:
     def reload_config(self) -> None:
         self.config.reload()
         self.commands.reload()
+        self._close_cleaner()
         self.cleaner = None       # se reconstruye al cambiar de motor/modelo/timeout
         if self.hotkeys:
             self.hotkeys.unregister()
@@ -128,6 +141,7 @@ class FlowLibreApp:
             self.hotkeys.unregister()
         if self.music_hotkeys:
             self.music_hotkeys.unregister()
+        self._close_cleaner()
 
     def open_dashboard(self) -> None:
         """Abre (o trae al frente) el panel. Corre en el hilo de tkinter."""

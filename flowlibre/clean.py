@@ -22,6 +22,9 @@ class Cleaner(ABC):
     def check_ready(self) -> str | None:
         """None si el motor está listo; si no, instrucciones para el usuario."""
 
+    def close(self) -> None:
+        """Libera recursos del motor (conexiones, etc). No-op por defecto."""
+
 
 def get_cleaner(config) -> Cleaner:
     """Devuelve el motor activo según config (se decide en cada dictado)."""

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import time
 
@@ -47,6 +48,27 @@ def classify_error(status: int, body: dict) -> str:
     return f"Error de la API de Claude ({status}): {detalle}"
 
 
+def _parse_retry_after(value: str | None) -> float | None:
+    """Segundos que pide el header `retry-after`, o None si no aplica.
+
+    Solo se aceptan números finitos no-negativos. El header HTTP también
+    admite una fecha (p.ej. "Wed, 21 Oct 2026 07:28:00 GMT"), que no
+    soportamos: `float()` la rechaza y se devuelve None. Un valor negativo,
+    NaN o infinito también se descarta en vez de pasarlo a `time.sleep`,
+    que revienta con `ValueError` fuera de `CleanerError` (la misma clase de
+    fuga que un cuerpo no-JSON: se pierde el dictado entero).
+    """
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        return None
+    if not math.isfinite(seconds) or seconds < 0:
+        return None
+    return seconds
+
+
 class ClaudeCleaner(Cleaner):
     name = "claude"
 
@@ -74,6 +96,12 @@ class ClaudeCleaner(Cleaner):
             )
         return self._client
 
+    def close(self) -> None:
+        """Cierra el cliente HTTP y libera la conexión TLS abierta."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
     def _timeout_for(self, max_tokens: int):
         """Plazos de red para una generacion de `max_tokens` tokens.
 
@@ -82,6 +110,13 @@ class ClaudeCleaner(Cleaner):
         ronda los 60 tokens/s; el margen fijo absorbe la cola de la API.
         `claude_timeout_s` pasa a gobernar solo la conexion, que es lo que de
         verdad se cuelga cuando no hay red.
+
+        Supuesto critico: este plazo solo se queda corto si el throughput real
+        de Haiku cae por debajo de ~37 tokens/s con la salida pegada al
+        presupuesto (`max_tokens`). Si eso pasa, es la unica falla de este
+        modulo que ocurre DESPUES de que la generacion ya se cobro y SIN
+        reintento (ver ReadTimeout en clean()) — vale la pena revisar este
+        numero si Haiku cambia de rendimiento.
         """
         import httpx
         base = self.config.claude_timeout_s
@@ -162,13 +197,7 @@ class ClaudeCleaner(Cleaner):
                 # Reintentar un rate limit de inmediato casi siempre devuelve
                 # otro 429. Se respeta retry-after si es corto; si es largo, o
                 # si no viene, no vale la pena seguir esperando el dictado.
-                retry_after = r.headers.get("retry-after")
-                wait = None
-                if retry_after is not None:
-                    try:
-                        wait = float(retry_after)
-                    except ValueError:
-                        wait = None
+                wait = _parse_retry_after(r.headers.get("retry-after"))
                 if wait is not None and wait > 2:
                     raise CleanerError(classify_error(r.status_code, body))
                 time.sleep(wait if wait is not None else 0.5)
