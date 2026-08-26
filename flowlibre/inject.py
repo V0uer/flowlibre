@@ -77,7 +77,12 @@ def inject_text(text: str, method: str = "clipboard") -> None:
         # El portapapeles no cuadro: otra app lo tiene tomado. Un Ctrl+V aqui
         # pegaria lo que esa app haya escrito, no lo que el autor dicto.
         _set_clipboard_text(text)
-        if not wait_for_clipboard(text):
+        # Si el primer sondeo (150ms) ya se agoto, el portapapeles esta
+        # genuinamente contendido: o se libera pronto o hay que rendirse y
+        # teclear. Alargar este segundo sondeo a 150ms tambien no cambia el
+        # panorama, solo suma otros 150ms al peor caso. Por eso usa un plazo
+        # corto: no lo subas para "darle mas chance".
+        if not wait_for_clipboard(text, timeout_s=0.05):
             # Se tecla el texto en vez de pegarlo: mas lento, pero el dictado
             # aterriza siempre y no se toca el portapapeles del usuario.
             keyboard.write(text, delay=0.005)
