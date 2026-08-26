@@ -37,6 +37,21 @@ def _set_clipboard_text(text: str) -> None:
         win32clipboard.CloseClipboard()
 
 
+def wait_for_clipboard(expected: str, timeout_s: float = 0.5) -> bool:
+    """Espera a que el portapapeles contenga `expected`. True si llego a tiempo.
+
+    Reemplaza los sleep() fijos: en la practica el portapapeles se asienta en
+    pocos milisegundos, pero bajo carga puede tardar mas. Sondear cuesta lo que
+    de verdad tarda, no siempre lo peor.
+    """
+    deadline = time.perf_counter() + timeout_s
+    while time.perf_counter() < deadline:
+        if _get_clipboard_text() == expected:
+            return True
+        time.sleep(0.005)
+    return False
+
+
 def inject_text(text: str, method: str = "clipboard") -> None:
     if not text:
         return
@@ -47,9 +62,11 @@ def inject_text(text: str, method: str = "clipboard") -> None:
     # clipboard (default)
     original = _get_clipboard_text()
     _set_clipboard_text(text)
-    time.sleep(0.05)          # dar tiempo a que el clipboard se asiente
+    wait_for_clipboard(text, timeout_s=0.5)   # antes: sleep(0.05) a ciegas
     keyboard.send("ctrl+v")
-    time.sleep(0.15)          # dejar que la app destino lea el clipboard
+    # Dar a la app destino un margen corto para leer el portapapeles antes de
+    # restaurarlo. Esto no se puede sondear: no hay forma de saber si ya leyo.
+    time.sleep(0.05)
     if original is not None:
         try:
             _set_clipboard_text(original)
