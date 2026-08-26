@@ -26,3 +26,6 @@ anthropic>=0.40
 
 # --- Config ---
 PyYAML>=6.0
+
+# --- Pruebas ---
+pytest>=8.0

@@ -1,0 +1,5 @@
+archivo                whisper  limpieza     total
+--------------------------------------------------
+voz_6s.wav               0.18s     0.93s     1.11s
+voz_21s.wav              0.69s     1.09s     1.78s
+voz_60s.wav              3.69s     1.78s     5.47s
