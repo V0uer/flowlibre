@@ -25,7 +25,8 @@ class FlowLibreApp:
         self.config = Config()
         self.recorder = Recorder(self.config.microphone)
         self.transcriber = Transcriber(
-            self.config.whisper_model, self.config.whisper_compute_type
+            self.config.whisper_model, self.config.whisper_compute_type,
+            self.config.whisper_beam_size,
         )
         self.commands = CommandProcessor()
         self.overlay = Overlay(
@@ -85,9 +86,11 @@ class FlowLibreApp:
             self.hotkeys.unregister()
         self.recorder = Recorder(self.config.microphone)
         if (self.transcriber.model_name != self.config.whisper_model
-                or self.transcriber.compute_type != self.config.whisper_compute_type):
+                or self.transcriber.compute_type != self.config.whisper_compute_type
+                or self.transcriber.beam_size != self.config.whisper_beam_size):
             self.transcriber = Transcriber(
-                self.config.whisper_model, self.config.whisper_compute_type
+                self.config.whisper_model, self.config.whisper_compute_type,
+                self.config.whisper_beam_size,
             )
         self.hotkeys = HotkeyManager(
             self.config.hotkey, self.config.hotkey_mode,

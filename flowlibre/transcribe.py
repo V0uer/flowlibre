@@ -37,9 +37,10 @@ def _add_nvidia_dll_dirs() -> None:
 class Transcriber:
     """Envuelve faster-whisper con carga perezosa del modelo."""
 
-    def __init__(self, model_name: str, compute_type: str) -> None:
+    def __init__(self, model_name: str, compute_type: str, beam_size: int = 1) -> None:
         self.model_name = model_name
         self.compute_type = compute_type
+        self.beam_size = beam_size
         self._model = None
 
     def load(self) -> None:
@@ -68,7 +69,8 @@ class Transcriber:
                 audio,
                 language=language,
                 vad_filter=True,
-                beam_size=5,
+                beam_size=self.beam_size,
+                condition_on_previous_text=False,
             )
             text = " ".join(seg.text.strip() for seg in segments).strip()
         except RuntimeError as e:
@@ -78,7 +80,11 @@ class Transcriber:
             from faster_whisper import WhisperModel
             self._model = WhisperModel(self.model_name, device="cpu", compute_type="int8")
             segments, info = self._model.transcribe(
-                audio, language=language, vad_filter=True, beam_size=5,
+                audio,
+                language=language,
+                vad_filter=True,
+                beam_size=self.beam_size,
+                condition_on_previous_text=False,
             )
             text = " ".join(seg.text.strip() for seg in segments).strip()
         return text, info.language or ""

@@ -24,7 +24,8 @@ DEFAULTS = {
     "format_mode": "mensaje",        # mensaje | email | notas | crudo
     "language": "auto",              # auto | es | en
     "microphone": None,
-    "whisper_model": "medium",
+    "whisper_model": "large-v3-turbo",
+    "whisper_beam_size": 1,
     "whisper_compute_type": "int8_float16",
     "ollama_url": "http://localhost:11434",
     "ollama_model": "qwen2.5:14b-instruct",
