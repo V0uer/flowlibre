@@ -90,9 +90,18 @@ def test_inject_text_falls_back_to_typing_when_clipboard_never_settles(monkeypat
     calls = []
     state = {"clipboard": "lo que el autor tenia copiado"}
 
+    def fake_set(t):
+        calls.append(("set", t))
+        state["clipboard"] = t
+
     monkeypatch.setattr(inject, "_get_clipboard_text", lambda: state["clipboard"])
-    # otra app tiene tomado el portapapeles: nuestros _set_clipboard_text nunca "pegan"
-    monkeypatch.setattr(inject, "_set_clipboard_text", lambda t: calls.append(("set", t)))
+    # wait_for_clipboard siempre da False (portapapeles contendido de verdad),
+    # asi que a inject_text no le importa lo que fake_set en verdad escriba:
+    # nunca lo va a dar por bueno. Lo que se prueba aqui es que, al final, el
+    # codigo restaure el original -- por eso fake_set SI muta state, igual que
+    # en los otros tests: si _restore_clipboard(original) se borrara del
+    # codigo fuente, este test debe fallar.
+    monkeypatch.setattr(inject, "_set_clipboard_text", fake_set)
     monkeypatch.setattr(inject, "wait_for_clipboard", lambda expected, timeout_s=None: False)
     monkeypatch.setattr(inject.keyboard, "send", lambda combo: calls.append(("send", combo)))
     monkeypatch.setattr(inject.keyboard, "write", lambda t, delay=0: calls.append(("write", t)))
