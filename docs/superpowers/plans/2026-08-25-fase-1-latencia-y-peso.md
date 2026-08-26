@@ -351,24 +351,30 @@ git commit -m "perf: usar large-v3-turbo con beam 1 (4x mas rapido, medido)"
 
 ---
 
-## Task 3: Timeout, reintento y `max_tokens` en la limpieza
+## Task 3: Limpieza con httpx — timeout, reintento y `max_tokens` real
 
-Aquí vive la cola de 9 segundos: hoy la llamada a la API no tiene timeout, así que espera lo que la API tarde.
+Aquí vive la cola de 9 segundos: hoy la llamada a la API no tiene timeout, así que espera lo que la API tarde. En la misma pasada se cambia el SDK de `anthropic` por un POST directo, porque arrastra `pydantic`, `google` y `hf_xet` (~25 MB) para usar un solo endpoint.
+
+**Esta tarea fusiona lo que el plan original tenía como Tasks 3 y 10.** Se juntaron porque ambas reescribían el mismo método `clean()`: hacerlo en dos pasadas significaba escribir el manejo de errores del SDK para borrarlo acto seguido.
 
 **Files:**
-- Modify: `flowlibre/clean_claude.py:76-84` (la llamada `messages.create`)
+- Modify: `flowlibre/clean_claude.py` (`_get_client` y `clean` completos)
+- Modify: `flowlibre/config.py` (`DEFAULTS`)
+- Modify: `flowlibre/app.py` (`_check_engine`)
+- Modify: `config.yaml`
+- Modify: `requirements.txt`
 - Test: `tests/test_clean_claude.py`
 
 **Interfaces:**
-- Consumes: `ClaudeCleaner(config)` con `.clean(raw_text: str, format_mode: str) -> str`.
-- Produces: `flowlibre.clean_claude.estimate_max_tokens(raw_text: str) -> int`.
+- Consumes: `Config` (Task 1), `Cleaner` / `CleanerError` / `strip_llm_wrapping` de `flowlibre/clean.py` (ya existen).
+- Produces: `flowlibre.clean_claude.estimate_max_tokens(raw_text: str) -> int` y `flowlibre.clean_claude.classify_error(status: int, body: dict) -> str`. `ClaudeCleaner.clean(raw_text, format_mode) -> str` conserva su firma y sus mensajes de error visibles.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [ ] **Step 1: Escribir los tests que fallan**
 
 Crear `tests/test_clean_claude.py`:
 
 ```python
-from flowlibre.clean_claude import estimate_max_tokens
+from flowlibre.clean_claude import classify_error, estimate_max_tokens
 
 
 def test_short_text_gets_small_budget():
@@ -390,14 +396,31 @@ def test_budget_has_a_floor():
 def test_budget_has_a_ceiling():
     # Un dictado enorme no debe pedir un presupuesto ilimitado
     assert estimate_max_tokens("a" * 100_000) <= 4096
+
+
+def test_401_habla_de_la_api_key():
+    msg = classify_error(401, {"error": {"message": "invalid x-api-key"}})
+    assert "API key" in msg
+
+
+def test_429_habla_de_rate_limit():
+    assert "Rate limit" in classify_error(429, {})
+
+
+def test_403_sugiere_revisar_saldo():
+    assert "saldo" in classify_error(403, {})
+
+
+def test_otros_codigos_incluyen_el_status():
+    assert "500" in classify_error(500, {"error": {"message": "boom"}})
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [ ] **Step 2: Correr los tests y verificar que fallan**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_clean_claude.py -v`
-Expected: FAIL — `ImportError: cannot import name 'estimate_max_tokens'`
+Expected: FAIL — `ImportError: cannot import name 'classify_error'`
 
-- [ ] **Step 3: Implementar el cálculo de presupuesto**
+- [ ] **Step 3: Implementar las dos funciones puras**
 
 En `flowlibre/clean_claude.py`, agregar después de la constante `NO_KEY_HELP`:
 
@@ -409,45 +432,27 @@ def estimate_max_tokens(raw_text: str) -> int:
     """Presupuesto de tokens de salida para limpiar `raw_text`."""
     approx_tokens = len(raw_text) / 3.5      # español: ~3.5 caracteres por token
     return max(64, min(4096, int(approx_tokens * 1.6) + 32))
+
+
+def classify_error(status: int, body: dict) -> str:
+    """Mensaje en español para un status HTTP de la API."""
+    if status == 401:
+        return "API key de Anthropic inválida o revocada. Revisa ANTHROPIC_API_KEY."
+    if status == 429:
+        return "Rate limit de la API de Claude alcanzado. Espera un momento o cambia a Motor A."
+    if status == 403:
+        return ("La API de Claude rechazó la petición (¿sin saldo?). "
+                "Revisa Billing en console.anthropic.com o cambia a Motor A.")
+    detalle = body.get("error", {}).get("message", "")
+    return f"Error de la API de Claude ({status}): {detalle}"
 ```
 
-- [ ] **Step 4: Correr el test y verificar que pasa**
+- [ ] **Step 4: Correr los tests y verificar que pasan**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/test_clean_claude.py -v`
-Expected: PASS (4 passed)
+Expected: PASS (8 passed)
 
-- [ ] **Step 5: Usar el presupuesto, el timeout y el reintento**
-
-En `flowlibre/clean_claude.py`, reemplazar el bloque `try:` que hace `messages.create` por:
-
-```python
-        last_error = None
-        for intento in range(2):        # un reintento: la mayoria de las colas largas son transitorias
-            try:
-                response = self._get_client().messages.create(
-                    model=self.config.claude_model,
-                    max_tokens=estimate_max_tokens(raw_text),
-                    system=[{
-                        "type": "text",
-                        "text": system_text,
-                        "cache_control": {"type": "ephemeral"},
-                    }],
-                    messages=messages,
-                    timeout=self.config.claude_timeout_s,
-                )
-                break
-            except (anthropic.APITimeoutError, anthropic.APIConnectionError) as e:
-                last_error = e
-                if intento == 0:
-                    continue
-                raise CleanerError(
-                    "La API de Claude no respondió a tiempo. Verifica tu red o usa Motor A (offline)."
-                ) from last_error
-```
-
-Dejar intactos los `except` de `AuthenticationError`, `RateLimitError`, `PermissionDeniedError` y `APIStatusError` que siguen, pero moverlos **dentro** del `try` del bucle para que sigan capturando. Al terminar el bucle, el código que extrae el texto de `response` sigue igual.
-
-- [ ] **Step 6: Agregar el timeout a la configuración**
+- [ ] **Step 5: Agregar el timeout a la configuración**
 
 En `flowlibre/config.py`, dentro de `DEFAULTS`, después de `"claude_model"`:
 
@@ -463,16 +468,142 @@ En `config.yaml`, después de la línea de `claude_model`:
 claude_timeout_s: 4.0
 ```
 
-- [ ] **Step 7: Correr toda la suite**
+- [ ] **Step 6: Reemplazar el cliente del SDK por httpx**
 
-Run: `.venv/Scripts/python.exe -m pytest tests/ -v`
-Expected: PASS (6 passed)
+En `flowlibre/clean_claude.py`, reemplazar el método `_get_client` completo por:
 
-- [ ] **Step 8: Commit**
+```python
+    API_URL = "https://api.anthropic.com/v1/messages"
+
+    def _get_client(self):
+        """Cliente HTTP reutilizado: conserva la conexion TLS entre dictados."""
+        if self._client is None:
+            import httpx
+            self._client = httpx.Client(
+                headers={
+                    "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                timeout=self.config.claude_timeout_s,
+            )
+        return self._client
+```
+
+- [ ] **Step 7: Reescribir la llamada a la API**
+
+En `flowlibre/clean_claude.py`, en el método `clean`:
+
+Borrar la línea `import anthropic` que está después del bloque `if problem: raise CleanerError(problem)`.
+
+Reemplazar todo lo que va desde `try:` (el que contiene `response = self._get_client().messages.create(...)`) hasta el último `except anthropic.APIConnectionError as e: ... from e` inclusive, por:
+
+```python
+        import httpx
+
+        payload = {
+            "model": self.config.claude_model,
+            "max_tokens": estimate_max_tokens(raw_text),
+            "system": [{
+                "type": "text",
+                "text": system_text,
+                "cache_control": {"type": "ephemeral"},
+            }],
+            "messages": messages,
+        }
+
+        r = None
+        last_error = None
+        for intento in range(2):     # un reintento: la mayoria de las colas largas son transitorias
+            try:
+                r = self._get_client().post(self.API_URL, json=payload)
+            except (httpx.TimeoutException, httpx.TransportError) as e:
+                last_error = e
+                if intento == 0:
+                    continue
+                raise CleanerError(
+                    "La API de Claude no respondió a tiempo. Verifica tu red o usa "
+                    "Motor A (offline)."
+                ) from last_error
+            if r.status_code == 200:
+                break
+            # 429 y 5xx son transitorios: valen un reintento. El resto, no.
+            if r.status_code in (429, 500, 502, 503, 529) and intento == 0:
+                continue
+            raise CleanerError(classify_error(r.status_code, r.json()))
+
+        if r is None or r.status_code != 200:
+            raise CleanerError(
+                "La API de Claude no respondió a tiempo. Verifica tu red o usa "
+                "Motor A (offline)."
+            )
+
+        text = next(
+            (b["text"] for b in r.json().get("content", []) if b.get("type") == "text"), ""
+        )
+```
+
+Dejar intactos el `if not text.strip(): raise CleanerError(...)` y el `return strip_llm_wrapping(text)` del final del método.
+
+También actualizar el docstring del módulo, arriba del todo: donde dice
+`- SDK oficial \`anthropic\`, modelo por defecto claude-haiku-4-5.` poner
+`- POST directo a la API con httpx, modelo por defecto claude-haiku-4-5.`
+
+- [ ] **Step 8: Precalentar la conexión al arrancar**
+
+En `flowlibre/app.py`, en `_check_engine`, agregar al final del método:
+
+```python
+        # Abrir el cliente HTTP ahora, para no pagar el handshake TLS en el
+        # primer dictado.
+        cleaner = get_cleaner(self.config)
+        if hasattr(cleaner, "_get_client"):
+            try:
+                cleaner._get_client()
+            except Exception:
+                pass
+```
+
+- [ ] **Step 9: Actualizar las dependencias**
+
+En `requirements.txt`, reemplazar el bloque que dice
+`# --- Motor B: API de Claude (opcional, apagado por defecto) ---` y su línea
+`anthropic>=0.40` por:
+
+```
+# --- Motor B: API de Claude ---
+# Se habla el endpoint directo con httpx: el SDK oficial arrastra pydantic,
+# google y hf_xet (~25 MB) para un solo POST.
+httpx>=0.27
+```
+
+Instalar httpx y desinstalar lo que sobra:
 
 ```bash
-git add flowlibre/clean_claude.py flowlibre/config.py config.yaml tests/test_clean_claude.py
-git commit -m "perf: timeout de 4s, un reintento y max_tokens calculado en la limpieza"
+.venv/Scripts/python.exe -m pip install httpx
+.venv/Scripts/python.exe -m pip uninstall -y anthropic
+```
+
+- [ ] **Step 10: Correr los tests y probar de verdad**
+
+Run: `.venv/Scripts/python.exe -m pytest tests/ -v`
+Expected: PASS (10 passed — 2 de config, 8 de este archivo)
+
+Luego, con `ANTHROPIC_API_KEY` puesta en el entorno, verificar que la limpieza sigue
+funcionando de punta a punta:
+
+```bash
+.venv/Scripts/python.exe -c "import sys; sys.path.insert(0,'.'); from flowlibre.config import Config; from flowlibre.clean_claude import ClaudeCleaner; print(ClaudeCleaner(Config()).clean('hola oye necesito que me mandes el reporte de agosto porfa', 'mensaje'))"
+```
+
+Expected: imprime el texto limpio y puntuado. Si imprime un `CleanerError`, revisar que
+`ANTHROPIC_API_KEY` esté en el entorno de esa terminal.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add flowlibre/clean_claude.py flowlibre/config.py flowlibre/app.py config.yaml requirements.txt tests/test_clean_claude.py
+git commit -m "perf: httpx con timeout de 4s, un reintento y max_tokens calculado"
 ```
 
 ---
@@ -576,7 +707,7 @@ Nota para quien implementa: el `sleep(0.05)` después del `Ctrl+V` **se queda**.
 - [ ] **Step 6: Correr toda la suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/ -v`
-Expected: PASS (9 passed)
+Expected: PASS (13 passed)
 
 - [ ] **Step 7: Commit**
 
@@ -1045,17 +1176,35 @@ En `flowlibre/audio.py`, en `start()`, reemplazar la definición del callback y 
         self.recording = True
 ```
 
-- [ ] **Step 5: Emitir el trozo final en `stop`**
+- [ ] **Step 5: Emitir el trozo final en `stop` y quitar el `assert` del stream**
 
-En `flowlibre/audio.py`, dentro de `stop()`, justo antes de `with self._lock:`, agregar:
+En `flowlibre/audio.py`, reemplazar el cuerpo de `stop()` desde `self.recording = False`
+hasta `self._stream = None` por:
 
 ```python
+        self.recording = False
+        self.level = 0.0
+
         if self._chunker is not None:
             final = self._chunker.flush()
             if final.size and self.on_chunk:
                 self.on_chunk(final)
             self._chunker = None
+
+        # Guarda en vez de assert: stop() puede llamarse sin un stream abierto
+        # (dos veces seguidas, o desde una prueba). Un assert aqui tumba la app.
+        if self._stream is not None:
+            self._stream.stop()
+            self._stream.close()
+            self._stream = None
 ```
+
+El resto de `stop()` (el bloque `with self._lock:` que concatena y devuelve el audio)
+queda igual.
+
+**Por qué el cambio del `assert`:** los tests de esta tarea llaman a `stop()` sin haber
+abierto un stream real. Con el `assert` original reventarían con `AssertionError` aunque
+el troceo estuviera perfecto.
 
 - [ ] **Step 6: Correr los tests y verificar que pasan**
 
@@ -1065,7 +1214,7 @@ Expected: PASS (3 passed)
 - [ ] **Step 7: Correr toda la suite**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/ -v`
-Expected: PASS (21 passed)
+Expected: PASS (29 passed)
 
 - [ ] **Step 8: Commit**
 
@@ -1415,7 +1564,7 @@ En el resto del cuerpo, reemplazar las dos apariciones de `duration_s=len(audio)
 - [ ] **Step 8: Correr los tests y verificar que pasan**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/ -v`
-Expected: PASS (28 passed)
+Expected: PASS (36 passed)
 
 - [ ] **Step 9: Probar la app de verdad**
 
@@ -1439,175 +1588,14 @@ git commit -m "perf: transcribir por trozos mientras se habla"
 
 ---
 
-## Task 10: Quitar el SDK de anthropic
+## Task 10: FUSIONADA EN LA TASK 3 — no se despacha
 
-`anthropic` arrastra `pydantic`, `google` y `hf_xet` para usar un solo endpoint.
+El plan original separaba "timeout y max_tokens" (Task 3) de "quitar el SDK de
+anthropic" (Task 10). El escaneo previo encontro que ambas reescribian el mismo
+metodo `clean()`: la Task 3 habria escrito manejo de errores del SDK para que la
+Task 10 lo borrara de inmediato. Se fusionaron en la Task 3.
 
-**Files:**
-- Modify: `flowlibre/clean_claude.py`
-- Modify: `requirements.txt`
-- Test: `tests/test_clean_claude.py` (agregar casos)
-
-**Interfaces:**
-- Consumes: `estimate_max_tokens` (Task 3).
-- Produces: `ClaudeCleaner.clean()` conserva su firma y sus mensajes de error. Se agrega `flowlibre.clean_claude.classify_error(status: int, body: dict) -> str` que devuelve el mensaje en español para cada código.
-
-- [ ] **Step 1: Escribir los tests que fallan**
-
-Agregar al final de `tests/test_clean_claude.py`:
-
-```python
-from flowlibre.clean_claude import classify_error
-
-
-def test_401_habla_de_la_api_key():
-    msg = classify_error(401, {"error": {"message": "invalid x-api-key"}})
-    assert "API key" in msg
-
-
-def test_429_habla_de_rate_limit():
-    assert "Rate limit" in classify_error(429, {})
-
-
-def test_403_sugiere_revisar_saldo():
-    assert "saldo" in classify_error(403, {})
-
-
-def test_otros_codigos_incluyen_el_status():
-    assert "500" in classify_error(500, {"error": {"message": "boom"}})
-```
-
-- [ ] **Step 2: Correr los tests y verificar que fallan**
-
-Run: `.venv/Scripts/python.exe -m pytest tests/test_clean_claude.py -v`
-Expected: FAIL — `ImportError: cannot import name 'classify_error'`
-
-- [ ] **Step 3: Implementar la clasificación de errores**
-
-En `flowlibre/clean_claude.py`, agregar después de `estimate_max_tokens`:
-
-```python
-def classify_error(status: int, body: dict) -> str:
-    """Mensaje en español para un status HTTP de la API."""
-    if status == 401:
-        return "API key de Anthropic inválida o revocada. Revisa ANTHROPIC_API_KEY."
-    if status == 429:
-        return "Rate limit de la API de Claude alcanzado. Espera un momento o cambia a Motor A."
-    if status == 403:
-        return ("La API de Claude rechazó la petición (¿sin saldo?). "
-                "Revisa Billing en console.anthropic.com o cambia a Motor A.")
-    detalle = body.get("error", {}).get("message", "")
-    return f"Error de la API de Claude ({status}): {detalle}"
-```
-
-- [ ] **Step 4: Reemplazar el SDK por httpx**
-
-En `flowlibre/clean_claude.py`, borrar `import anthropic` de `_get_client` y de `clean`, y reemplazar `_get_client` por:
-
-```python
-    API_URL = "https://api.anthropic.com/v1/messages"
-
-    def _get_client(self):
-        """Cliente HTTP reutilizado: conserva la conexion TLS entre dictados."""
-        if self._client is None:
-            import httpx
-            self._client = httpx.Client(
-                headers={
-                    "x-api-key": os.environ["ANTHROPIC_API_KEY"],
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                timeout=self.config.claude_timeout_s,
-            )
-        return self._client
-```
-
-Reemplazar el bloque del bucle de reintento por:
-
-```python
-        import httpx
-
-        payload = {
-            "model": self.config.claude_model,
-            "max_tokens": estimate_max_tokens(raw_text),
-            "system": [{
-                "type": "text",
-                "text": system_text,
-                "cache_control": {"type": "ephemeral"},
-            }],
-            "messages": messages,
-        }
-
-        last_error = None
-        for intento in range(2):
-            try:
-                r = self._get_client().post(self.API_URL, json=payload)
-            except (httpx.TimeoutException, httpx.TransportError) as e:
-                last_error = e
-                if intento == 0:
-                    continue
-                raise CleanerError(
-                    "La API de Claude no respondió a tiempo. Verifica tu red o usa Motor A (offline)."
-                ) from last_error
-            if r.status_code == 200:
-                break
-            # 429 y 5xx son transitorios: vale un reintento. El resto, no.
-            if r.status_code in (429, 500, 502, 503, 529) and intento == 0:
-                continue
-            raise CleanerError(classify_error(r.status_code, r.json()))
-
-        text = next(
-            (b["text"] for b in r.json().get("content", []) if b.get("type") == "text"), ""
-        )
-```
-
-Dejar intacto el `if not text.strip(): raise CleanerError(...)` y el `return strip_llm_wrapping(text)` del final.
-
-- [ ] **Step 5: Precalentar la conexión al arrancar**
-
-En `flowlibre/app.py`, en `_check_engine`, agregar al final del método:
-
-```python
-        # Abrir el cliente HTTP ahora, para no pagar el handshake TLS en el
-        # primer dictado.
-        cleaner = get_cleaner(self.config)
-        if hasattr(cleaner, "_get_client"):
-            try:
-                cleaner._get_client()
-            except Exception:
-                pass
-```
-
-- [ ] **Step 6: Actualizar las dependencias**
-
-En `requirements.txt`, reemplazar el bloque del Motor B por:
-
-```
-# --- Motor B: API de Claude ---
-# Se habla el endpoint directo con httpx: el SDK oficial arrastra pydantic,
-# google y hf_xet (~25 MB) para un solo POST.
-httpx>=0.27
-```
-
-Desinstalar lo que sobra:
-
-```bash
-.venv/Scripts/python.exe -m pip uninstall -y anthropic
-```
-
-- [ ] **Step 7: Correr los tests y probar de verdad**
-
-Run: `.venv/Scripts/python.exe -m pytest tests/ -v`
-Expected: PASS (32 passed)
-
-Luego dictar una vez con la app corriendo y confirmar en `debug.log` que la línea `inyectando ... (motor claude)` aparece normal.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add flowlibre/clean_claude.py flowlibre/app.py requirements.txt tests/test_clean_claude.py
-git commit -m "perf: hablar la API con httpx y precalentar la conexion TLS"
-```
+Ver el ruling C2 en `.superpowers/sdd/2026-08-25-fase-1-latencia-y-peso/progress.md`.
 
 ---
 
@@ -1707,6 +1695,7 @@ En `flowlibre/transcribe.py`, en `load()`, resolver la ruta relativa contra la r
         # Una ruta relativa apunta a un modelo local; un nombre suelto se baja de HF.
         candidato = ROOT / self.model_name
         origen = str(candidato) if candidato.is_dir() else self.model_name
+        self._origen = origen        # lo necesita el reintento en CPU de transcribe()
 
         try:
             self._model = WhisperModel(
@@ -1718,7 +1707,21 @@ En `flowlibre/transcribe.py`, en `load()`, resolver la ruta relativa contra la r
             self._model = WhisperModel(origen, device="cpu", compute_type="int8")
 ```
 
-En el `except RuntimeError` de `transcribe()`, reemplazar `WhisperModel(self.model_name, ...)` por `WhisperModel(origen, ...)` no aplica (ahí no existe `origen`); en su lugar, guardar el origen resuelto en `self._origen = origen` dentro de `load()` y usar `self._origen` en el reintento de CPU.
+Inicializar el atributo en el constructor de `Transcriber`, junto a `self._model = None`:
+
+```python
+        self._origen = model_name
+```
+
+Y en `transcribe()`, dentro del `except RuntimeError` que reintenta en CPU, reemplazar
+`WhisperModel(self.model_name, device="cpu", compute_type="int8")` por:
+
+```python
+            self._model = WhisperModel(self._origen, device="cpu", compute_type="int8")
+```
+
+Sin esto, el reintento en CPU buscaría en Hugging Face un modelo llamado
+`models/large-v3-turbo-int8` y fallaría.
 
 - [ ] **Step 4: Verificar que la app sigue transcribiendo**
 
