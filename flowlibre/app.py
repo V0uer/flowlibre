@@ -78,6 +78,14 @@ class FlowLibreApp:
         problem = get_cleaner(self.config).check_ready()
         if problem:
             print(f"[FlowLibre] Aviso del motor de limpieza:\n{problem}")
+        # Abrir el cliente HTTP ahora, para no pagar el handshake TLS en el
+        # primer dictado.
+        cleaner = get_cleaner(self.config)
+        if hasattr(cleaner, "_get_client"):
+            try:
+                cleaner._get_client()
+            except Exception:
+                pass
 
     def reload_config(self) -> None:
         self.config.reload()

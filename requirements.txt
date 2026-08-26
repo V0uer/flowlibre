@@ -21,8 +21,10 @@ Pillow>=10.0
 # --- Motor A: Ollama (HTTP local) ---
 requests>=2.31
 
-# --- Motor B: API de Claude (opcional, apagado por defecto) ---
-anthropic>=0.40
+# --- Motor B: API de Claude ---
+# Se habla el endpoint directo con httpx: el SDK oficial arrastra pydantic,
+# google y hf_xet (~25 MB) para un solo POST.
+httpx>=0.27
 
 # --- Config ---
 PyYAML>=6.0

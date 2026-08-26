@@ -31,6 +31,7 @@ DEFAULTS = {
     "ollama_model": "qwen2.5:14b-instruct",
     "ollama_keep_alive": "5m",
     "claude_model": "claude-haiku-4-5",
+    "claude_timeout_s": 4.0,
     "claude_fallback_to_ollama": True,
     "inject_method": "clipboard",    # clipboard | typing
 }
