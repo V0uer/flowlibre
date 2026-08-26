@@ -1202,18 +1202,22 @@ hasta `self._stream = None` por:
         self.recording = False
         self.level = 0.0
 
-        if self._chunker is not None:
-            final = self._chunker.flush()
-            if final.size and self.on_chunk:
-                self.on_chunk(final)
-            self._chunker = None
-
+        # ORDEN CRITICO: cerrar el stream ANTES de vaciar el troceador. Mientras el
+        # stream siga vivo, el callback de PortAudio sigue llamando a _ingest desde
+        # SU PROPIO hilo; un bloque que entre a media de flush() se pierde en
+        # silencio y se come la ultima palabra del dictado.
         # Guarda en vez de assert: stop() puede llamarse sin un stream abierto
         # (dos veces seguidas, o desde una prueba). Un assert aqui tumba la app.
         if self._stream is not None:
             self._stream.stop()
             self._stream.close()
             self._stream = None
+
+        if self._chunker is not None:
+            final = self._chunker.flush()
+            if final.size and self.on_chunk:
+                self.on_chunk(final)
+            self._chunker = None
 ```
 
 El resto de `stop()` (el bloque `with self._lock:` que concatena y devuelve el audio)
@@ -1594,7 +1598,18 @@ Dictar tres veces y confirmar en `debug.log`:
 2. Un dictado largo (~60 s) — el tiempo entre `procesando:` e `inyectando` debe ser **menos de 1.5 s**, contra los ~6 s de antes.
 3. Un dictado con pausas largas a media frase — verificar que **no se repiten ni se comen palabras** en las uniones. Este es el riesgo principal del troceo.
 
-Si aparecen palabras repetidas, subir `overlap_s` en `Chunker`; si se comen palabras, bajarlo.
+Si algo sale mal en las uniones, el ajuste va así — **cuidado, es contraintuitivo**:
+
+- **Se comen palabras** en las uniones → el traslape es muy corto: **subir** `overlap_s`.
+- **Se repiten palabras** → el traslape sí las capturó pero `merge_overlap` no las dedupló.
+  **No subas `overlap_s`: lo empeora**, porque más traslape es más texto duplicado que
+  deduplicar. Revisa primero `merge.py` (¿la normalización de puntuación está atrapando
+  la variante?, ¿`max_words` alcanza?), y solo después considera **bajar** `overlap_s`.
+
+Y nunca subas `overlap_s` cerca de `min_s`: el troceador degenera. Con `min_s=8` y
+`silence_s=0.4`, un `overlap_s` de 8 dispara **51 trozos para 30 s de audio** (medido),
+satura la cola de transcripción y deja la app colgada en "procesando". `Chunker` clampea
+el valor y avisa por consola si tuvo que recortarlo.
 
 - [ ] **Step 10: Commit**
 
