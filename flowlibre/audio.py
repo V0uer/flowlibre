@@ -9,8 +9,6 @@ import sounddevice as sd
 
 SAMPLE_RATE = 16000
 
-from .chunker import Chunker  # noqa: E402 - chunker importa SAMPLE_RATE de este módulo
-
 
 def resolve_device(microphone) -> int | None:
     """Convierte el valor de config (None, índice o parte del nombre) a índice."""
@@ -29,6 +27,8 @@ class Recorder:
     """Graba audio entre start() y stop(). stop() devuelve el audio como float32."""
 
     def __init__(self, microphone=None, on_chunk=None) -> None:
+        from .chunker import Chunker  # import local: evita el ciclo con audio.py
+
         self.device = resolve_device(microphone)
         self.on_chunk = on_chunk
         self._stream: sd.InputStream | None = None
@@ -47,9 +47,19 @@ class Recorder:
         if self._chunker is not None:
             trozo = self._chunker.feed(indata.flatten())
             if trozo is not None and self.on_chunk:
-                self.on_chunk(trozo)
+                try:
+                    self.on_chunk(trozo)
+                except Exception as e:
+                    # Esto corre DENTRO del callback de PortAudio: una excepcion
+                    # que escape aborta el stream y la grabacion muere en silencio
+                    # (recording se queda en True y no se captura mas audio).
+                    # Perder un trozo es mucho menos malo que perder el dictado.
+                    print(f"[FlowLibre] Error procesando un trozo de audio: "
+                          f"{type(e).__name__}: {e}")
 
     def start(self) -> None:
+        from .chunker import Chunker  # import local: evita el ciclo con audio.py
+
         if self.recording:
             return
         self._chunks = []
