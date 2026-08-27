@@ -37,32 +37,40 @@ def test_no_borra_repeticiones_legitimas_lejanas():
 
 
 def test_traslape_con_una_palabra_distinta_se_deduplica():
-    # Critical de la revision: Whisper transcribio "completo" de un lado y
-    # "completos" del otro para el mismo traslape de audio. La igualdad
-    # exacta anterior dejaba la frase del traslape repetida entera; con el
-    # umbral difuso mas la regla de "mejor ratio, no el primero que cruza"
-    # se queda con el traslape real de 2 palabras y conserva "de".
+    # Critical de la revision original: Whisper transcribio "completo" de un
+    # lado y "completos" del otro para el mismo traslape de audio. La
+    # igualdad exacta dejaba la frase del traslape repetida entera. Con la
+    # calificacion por pareja de tokens (umbral 0.8 individual), el bloque de
+    # 2 ("reporte"/"reporte"=1.0, "completo"/"completos"=0.941) califica; el
+    # de 3 ("el"/"reporte"=0.222, ...) no, asi que gana el de 2 y se conserva
+    # "de".
     prev = "vamos a revisar el reporte completo"
     nxt = "reporte completos de este mes"
     assert merge_overlap(prev, nxt) == "vamos a revisar el reporte completo de este mes"
 
 
-def test_gana_el_k_de_mejor_ratio_no_el_primero_que_cruza():
-    # Regresion concreta de esta ronda: el bloque de 3 palabras
-    # ("tu reporte completo" / "reporte completos ya", ratio ~0.82) tambien
-    # cruza el umbral de 0.75, pero el bloque de 2 ("reporte completo" /
-    # "reporte completos", ratio ~0.97) es el traslape real y tiene mejor
-    # ratio. Debe ganar el de mejor ratio, no el k=3 por aparecer primero al
-    # buscar de mayor a menor.
+def test_bloque_grande_no_califica_si_una_pareja_de_tokens_no_encaja():
+    # Actualizado de esta ronda: con el criterio anterior (ratio de
+    # caracteres sobre el bloque unido) este caso se explicaba como "el de 3
+    # cruza el umbral pero el de 2 tiene mejor ratio, gana el de mejor
+    # ratio". Ese razonamiento ya no aplica -- no hay ratios que comparar
+    # entre tamaños. Con el criterio por pareja de tokens, el bloque de 3
+    # ("tu"/"reporte"=0.0, "reporte"/"completos"=0.941, "completo"/"ya"=0.0)
+    # simplemente no califica porque "tu"/"reporte" no llega a 0.8; el de 2
+    # ("reporte"/"reporte"=1.0, "completo"/"completos"=0.941) si califica y
+    # gana por ser el mas grande que califica.
     prev = "oye tu reporte completo"
     nxt = "reporte completos ya no"
     assert merge_overlap(prev, nxt) == "oye tu reporte completo ya no"
 
 
-def test_empate_de_ratio_prefiere_el_k_mas_grande():
-    # Traslape real de 2 palabras identicas ("si si"): k=1 (ultima palabra de
-    # prev vs primera de nxt, ambas "si") y k=2 (bloque completo) empatan en
-    # ratio 1.0. Debe ganar el k mas grande (2), o se quedaria "si" duplicado.
+def test_prefiere_el_bloque_mas_grande_que_tambien_califica():
+    # Actualizado de esta ronda: ya no hay "empate de ratio" que desempatar
+    # (la calificacion es binaria, no un numero). Este caso ahora demuestra
+    # que, cuando mas de un k califica (aqui k=1 y k=2, ambos con igualdad
+    # exacta en "si"/"si"), gana el mas grande porque el bucle los recorre de
+    # mayor a menor y retorna en el primero que califica -- sin necesidad de
+    # revisar los mas chicos. Si ganara k=1 quedaria un "si" duplicado.
     prev = "hola que tal si si"
     nxt = "si si vamos ya"
     assert merge_overlap(prev, nxt) == "hola que tal si si vamos ya"
@@ -113,3 +121,34 @@ def test_traslape_que_excede_max_words_no_se_deduplica_completo():
 
 def test_max_words_cero_concatena_sin_buscar():
     assert merge_overlap("hola que tal", "todo bien", max_words=0) == "hola que tal todo bien"
+
+
+def test_no_borra_palabra_real_cuando_una_pareja_de_tokens_no_encaja():
+    # Important de la re-revision: con el criterio de ratio de bloque unido,
+    # "el reporte completo del mes" + "completo del proyecto anterior" daba
+    # ratio 0.757 en k=3 y calificaba, borrando "proyecto" -- perdida
+    # silenciosa de contenido real, sin dejar ni un duplicado visible que
+    # alguien notara. Con el criterio por pareja de tokens, el bloque de 3
+    # ("completo"/"completo"=1.0, "del"/"del"=1.0, "mes"/"proyecto"=0.182) no
+    # califica porque la pareja "mes"/"proyecto" no llega a 0.8. Ningun otro k
+    # califica tampoco, asi que se concatena entero y "proyecto" se conserva.
+    prev = "el reporte completo del mes"
+    nxt = "completo del proyecto anterior"
+    assert merge_overlap(prev, nxt) == "el reporte completo del mes completo del proyecto anterior"
+
+
+def test_traslape_real_mas_largo_con_pareja_debajo_del_umbral_no_se_resuelve():
+    # Caso de la re-revision que el coordinador esperaba resuelto y que NO lo
+    # esta con el criterio actual -- documentado aqui, no maquillado.
+    # El traslape real son 3 palabras ("no puedo no" / "no podo no"), y el
+    # coordinador esperaba que calificara por la pareja "puedo"/"podo". El
+    # ratio real de esa pareja es 0.667 (no ~0.89 como se estimo), por debajo
+    # del umbral de 0.8, asi que el bloque de 3 NO califica. Solo califica
+    # k=1 (el ultimo "no" de prev contra el primer "no" de nxt, exacto), y
+    # ese es un traslape mas chico y casual dentro del real: el bug original
+    # (un match exacto corto le gana a un traslape real mas largo) sigue sin
+    # resolverse para este caso concreto. Ver reporte para los numeros
+    # completos y la discusion.
+    prev = "dijo que no puedo no"
+    nxt = "no podo no hacerlo bien"
+    assert merge_overlap(prev, nxt) == "dijo que no puedo no podo no hacerlo bien"
