@@ -189,3 +189,26 @@ def test_regla_de_largo_minimo_token_por_token():
 
     assert _tokens_coinciden("de", "del") is False
     assert _tokens_coinciden("completo", "completos") is True
+
+
+def test_sustitucion_de_una_letra_no_se_confunde_con_traslape():
+    # Critical de esta ronda: pesar/pasar son verbos distintos, ambos de 5
+    # letras, y su ratio es exactamente 0.8 -- una sustitucion de un caracter
+    # en una palabra de n=5 da 2(n-1)/2n = 0.8 exacto (no es casualidad de
+    # este par, es la formula general). Con el umbral en 0.8 esto calificaba
+    # y se comia "pasar" en silencio. Con 0.85 ya no califica.
+    prev = "hoy vamos a pesar mucho"
+    nxt = "pasar mucho tiempo aqui"
+    assert merge_overlap(prev, nxt) == "hoy vamos a pesar mucho pasar mucho tiempo aqui"
+
+
+def test_adicion_califica_pero_sustitucion_de_cinco_letras_no():
+    # Congela la separacion aritmetica que justifica 0.85: una ADICION de
+    # letra (tiene/tienen, ratio 0.909 -- variacion real de Whisper) sigue
+    # calificando, mientras que una SUSTITUCION en una palabra de 5 letras
+    # (ratio 0.8 exacto) ya no. Es el razonamiento del umbral, no solo un
+    # caso mas de merge_overlap.
+    from flowlibre.merge import _tokens_coinciden
+
+    assert _tokens_coinciden("tiene", "tienen") is True
+    assert _tokens_coinciden("pesar", "pasar") is False

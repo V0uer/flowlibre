@@ -90,6 +90,42 @@ los dos es mas corto, se exige igualdad exacta.** "completo"/"completos"
 (8 y 9) sigue calificando por ratio (0.941); "de"/"del" (2 y 3) y
 "un"/"una" (2 y 3) ahora exigen exactitud y no califican.
 
+Umbral 0.8 -> 0.85: separar sustitucion de adicion
+------------------------------------------------------------------------
+Con el umbral en 0.8 sobrevivia un tercer agujero, mas sutil que las palabras
+cortas: dos palabras de **contenido**, ambas de 5+ letras, que difieren en
+**una sola letra sustituida** (no añadida) tambien pueden calificar sin ser
+la misma palabra. Ejemplo verificado:
+`merge_overlap('hoy vamos a pesar mucho', 'pasar mucho tiempo aqui')` ->
+se comia "pasar" porque `pesar`/`pasar` da ratio exactamente 0.8.
+
+La separacion no es casualidad, es aritmetica. Para una palabra de n letras:
+una **sustitucion** de un caracter dentro de la palabra da un ratio de
+`2(n-1) / 2n`, que para n=5 es exactamente 0.8; una **adicion** (plural,
+sufijo, acento agregado) da `2n / (2n+1)`, que para n=5 ya es 0.909 y solo
+sube con n. Verificado: completo/completos=0.941, tiene/tienen=0.909,
+reporte/reportes=0.933, presupuesto/presupuestos=0.957 (todas adiciones);
+pesar/pasar=0.8, vivir/vivar=0.8 (sustituciones de 5 letras).
+
+Esto importa porque la variacion real que introduce Whisper en los bordes de
+corte es casi siempre una adicion o supresion (plural, acento, sufijo), no
+una sustitucion — una sustitucion que ademas produce otra palabra española
+valida es, casi por definicion, otra palabra. Por eso el umbral subio de 0.8
+a 0.85 (`_TOKEN_FUZZY_THRESHOLD`): eso rechaza las sustituciones de 5 letras
+sin rechazar ninguna de las adiciones de arriba.
+
+Limitacion conocida, tercera categoria (sin resolver): subir el umbral no
+cierra el problema del todo. Una sustitucion en una palabra de 8 letras da
+`2*7/16 = 0.875`, que sigue por encima de 0.85 — asi que dos palabras
+españolas reales de 8+ letras que difieran en una sola letra (mas raras que
+el caso de 5, pero existen) todavia pueden calificar como "la misma palabra"
+sin serlo, con la misma perdida silenciosa que el caso de "pesar"/"pasar".
+Seguir subiendo el umbral no cierra esto sin costo: en algun punto empieza a
+rechazar adiciones legitimas en palabras cortas-medianas. La via de solucion
+real no es seguir moviendo este numero, sino comparar con los timestamps de
+los segmentos de Whisper (ver la limitacion del tartamudeo, mas abajo) en vez
+de inferir "misma palabra" solo del texto.
+
 Limitacion conocida (sin resolver): un traslape real mas largo puede seguir
 perdiendo contra un match exacto de una sola palabra si alguna pareja del
 bloque largo no coincide. Ejemplo verificado:
@@ -138,7 +174,18 @@ _PUNCT = {"Pc", "Pd", "Pe", "Pf", "Pi", "Po", "Ps"}
 # de caracteres sobre bloques de tamaños distintos no es comparable entre si,
 # asi que la calificacion de un bloque es binaria (todas sus parejas de
 # tokens pasan este umbral), no un numero a competir entre tamaños de k.
-_TOKEN_FUZZY_THRESHOLD = 0.8
+#
+# 0.85, no 0.8: para una palabra de n letras, una SUSTITUCION de un caracter
+# da ratio 2(n-1)/2n (0.8 exacto en n=5, p.ej. pesar/pasar, vivir/vivar),
+# mientras que una ADICION (plural, sufijo -- la variacion real que Whisper
+# introduce) da 2n/(2n+1), que ya es 0.909 en n=5 y solo sube. 0.85 cae entre
+# ambas familias: rechaza las sustituciones de 5 letras y conserva todas las
+# adiciones (completo/completos=0.941, tiene/tienen=0.909,
+# reporte/reportes=0.933, presupuesto/presupuestos=0.957). No lo bajes a 0.8
+# de nuevo sin releer el docstring: a 0.8 cualquier sustitucion de 5 letras
+# que resulte en otra palabra valida del español cuenta como "la misma
+# palabra" y borra contenido en silencio.
+_TOKEN_FUZZY_THRESHOLD = 0.85
 
 # Largo minimo (en caracteres normalizados) que deben tener AMBOS tokens de
 # una pareja para que la comparacion difusa aplique. Por debajo de este largo
