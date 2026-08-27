@@ -40,17 +40,32 @@ def test_traslape_con_una_palabra_distinta_se_deduplica():
     # Critical de la revision: Whisper transcribio "completo" de un lado y
     # "completos" del otro para el mismo traslape de audio. La igualdad
     # exacta anterior dejaba la frase del traslape repetida entera; con el
-    # umbral difuso ya no.
-    #
-    # OJO (reportado aparte al coordinador): con este mismo ejemplo, el
-    # ratio en k=3 ("el reporte completo" vs "reporte completos de") tambien
-    # cae por encima de 0.75 (~0.82), y como el algoritmo prueba k de mayor
-    # a menor, se queda con el traslape de 3 palabras en vez del de 2 reales,
-    # comiendose "de" -- una palabra que no era parte del traslape. El
-    # assert de abajo documenta el comportamiento actual, no el ideal.
+    # umbral difuso mas la regla de "mejor ratio, no el primero que cruza"
+    # se queda con el traslape real de 2 palabras y conserva "de".
     prev = "vamos a revisar el reporte completo"
     nxt = "reporte completos de este mes"
-    assert merge_overlap(prev, nxt) == "vamos a revisar el reporte completo este mes"
+    assert merge_overlap(prev, nxt) == "vamos a revisar el reporte completo de este mes"
+
+
+def test_gana_el_k_de_mejor_ratio_no_el_primero_que_cruza():
+    # Regresion concreta de esta ronda: el bloque de 3 palabras
+    # ("tu reporte completo" / "reporte completos ya", ratio ~0.82) tambien
+    # cruza el umbral de 0.75, pero el bloque de 2 ("reporte completo" /
+    # "reporte completos", ratio ~0.97) es el traslape real y tiene mejor
+    # ratio. Debe ganar el de mejor ratio, no el k=3 por aparecer primero al
+    # buscar de mayor a menor.
+    prev = "oye tu reporte completo"
+    nxt = "reporte completos ya no"
+    assert merge_overlap(prev, nxt) == "oye tu reporte completo ya no"
+
+
+def test_empate_de_ratio_prefiere_el_k_mas_grande():
+    # Traslape real de 2 palabras identicas ("si si"): k=1 (ultima palabra de
+    # prev vs primera de nxt, ambas "si") y k=2 (bloque completo) empatan en
+    # ratio 1.0. Debe ganar el k mas grande (2), o se quedaria "si" duplicado.
+    prev = "hola que tal si si"
+    nxt = "si si vamos ya"
+    assert merge_overlap(prev, nxt) == "hola que tal si si vamos ya"
 
 
 def test_umbral_difuso_no_fusiona_textos_que_no_se_traslapan():

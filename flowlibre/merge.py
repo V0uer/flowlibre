@@ -30,6 +30,29 @@ Para bloques de **una sola palabra** (k == 1) no hay contexto que respalde una
 decision difusa: "casa" y "caza" comparten 3 de 4 letras (ratio 0.75) y son
 palabras distintas. Ahi se exige igualdad exacta.
 
+Seleccion de k: el de mejor ratio, no el primero que cruza el umbral
+----------------------------------------------------------------------
+El ratio es por caracteres sobre el bloque unido, y eso tiene una consecuencia
+no obvia: un bloque mas largo que incluye el traslape real mas 1-2 palabras
+ajenas todavia comparte casi toda esa subcadena, asi que su ratio se diluye
+poco y con frecuencia *tambien* cruza 0.75 — aunque esas palabras ajenas no
+sean parte del traslape. Ejemplo real:
+`merge_overlap('vamos a revisar el reporte completo', 'reporte completos de este mes')`:
+el traslape real es "reporte completo(s)" (k=2, ratio 0.97), pero el bloque de
+3 palabras ("el reporte completo" / "reporte completos de") tambien cruza el
+umbral (ratio ~0.82). Si el algoritmo se quedara con el primer k que cruza
+(buscando de mayor a menor), elegiria el bloque de 3 y se comeria "de" — una
+palabra real que no era parte del traslape.
+
+Por eso no se corta en el primer k que cruza: se recorren todos los k
+candidatos y se elige el de **mayor ratio** (k == 1 cuenta como ratio 1.0
+cuando hay igualdad exacta). En caso de empate exacto se prefiere el k **mas
+grande**: un traslape real de 2 palabras identicas empata entre k=1 y k=2, y
+quedarse con k=1 dejaria una palabra duplicada en cada frontera de trozo, en
+todos los dictados — eso es mucho mas frecuente que el caso raro (un
+tartamudeo del que habla justo en la frontera) que el empate hacia k grande
+sacrifica. Se prefiere fallar en lo raro.
+
 Limitacion conocida: repeticion legitima en la frontera del corte
 -------------------------------------------------------------------
 Esta funcion compara solo texto, sin ver los timestamps de los segmentos de
@@ -81,8 +104,13 @@ def merge_overlap(prev: str, nxt: str, max_words: int = 15) -> str:
     next_words = nxt.split()
     limite = min(max_words, len(prev_words), len(next_words))
 
-    # De mayor a menor: el traslape mas largo es el correcto. Buscar de menor a
-    # mayor encontraria coincidencias de una palabra que son casualidad.
+    # Se recorren todos los k candidatos y se elige el de mejor ratio, no el
+    # primero que cruza el umbral (ver docstring: un k mas grande puede cruzar
+    # el umbral por inercia de caracteres sin ser el traslape real). Al
+    # iterar de mayor a menor y actualizar solo con '>' estricto, un empate
+    # exacto de ratio se queda con el k mas grande visto primero.
+    mejor_k = None
+    mejor_ratio = -1.0
     for k in range(limite, 0, -1):
         cola = [_norm(w) for w in prev_words[-k:]]
         cabeza = [_norm(w) for w in next_words[:k]]
@@ -96,15 +124,19 @@ def merge_overlap(prev: str, nxt: str, max_words: int = 15) -> str:
 
         if k == 1:
             # Con una sola palabra de contexto, un umbral difuso seria casi
-            # siempre falso positivo ("casa" / "caza"). Se exige exactitud.
-            if cola == cabeza:
-                return " ".join(prev_words + next_words[k:])
-            continue
+            # siempre falso positivo ("casa" / "caza"). Se exige exactitud;
+            # cuenta como ratio 1.0 para competir con bloques mas largos.
+            ratio = 1.0 if cola == cabeza else 0.0
+        else:
+            cola_norm = " ".join(cola)
+            cabeza_norm = " ".join(cabeza)
+            ratio = difflib.SequenceMatcher(None, cola_norm, cabeza_norm).ratio()
 
-        cola_norm = " ".join(cola)
-        cabeza_norm = " ".join(cabeza)
-        ratio = difflib.SequenceMatcher(None, cola_norm, cabeza_norm).ratio()
-        if ratio >= _FUZZY_THRESHOLD:
-            return " ".join(prev_words + next_words[k:])
+        if ratio >= _FUZZY_THRESHOLD and ratio > mejor_ratio:
+            mejor_ratio = ratio
+            mejor_k = k
+
+    if mejor_k is not None:
+        return " ".join(prev_words + next_words[mejor_k:])
 
     return " ".join(prev_words + next_words)
