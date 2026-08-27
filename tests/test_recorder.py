@@ -140,3 +140,27 @@ def test_excepcion_en_on_chunk_no_rompe_la_ingesta():
     with r._lock:
         audio_acumulado = sum(c.size for c in r._chunks)
     assert audio_acumulado >= 11 * SAMPLE_RATE
+
+
+def test_stop_no_propaga_excepcion_del_flush_final_y_limpia_el_chunker():
+    """Si el consumidor truena al recibir el trozo final del flush(), stop()
+    no debe propagar la excepcion (mataria el hilo del atajo de teclado), debe
+    seguir devolviendo el audio completo, y self._chunker debe quedar en None
+    (si no, el troceador viejo sobrevive con estado del dictado anterior)."""
+
+    def on_chunk_que_truena(chunk):
+        raise RuntimeError("boom")
+
+    r = Recorder(on_chunk=on_chunk_que_truena)
+    r._chunks = []
+    r.recording = True
+    # el corte natural de mitad de grabacion tambien invoca on_chunk (y tambien
+    # truena), pero _ingest ya lo atrapa (ver test de arriba); aqui nos importa
+    # el flush() de stop().
+    for bloque in (habla(9), silencio(0.6), habla(3)):
+        r._ingest(bloque)
+
+    completo = r.stop()  # no debe propagar RuntimeError
+
+    assert completo.size >= 12 * SAMPLE_RATE
+    assert r._chunker is None

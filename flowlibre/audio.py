@@ -98,9 +98,17 @@ class Recorder:
 
         if self._chunker is not None:
             final = self._chunker.flush()
-            if final.size and self.on_chunk:
-                self.on_chunk(final)
+            # self._chunker = None va ANTES de llamar a on_chunk: si el
+            # consumidor truena, la excepcion no puede dejar vivo el troceador
+            # de esta grabacion (se filtraria a la siguiente) ni escapar hacia
+            # el hilo del atajo de teclado que invoca stop().
             self._chunker = None
+            if final.size and self.on_chunk:
+                try:
+                    self.on_chunk(final)
+                except Exception as e:
+                    print(f"[FlowLibre] Error procesando el trozo final de audio: "
+                          f"{type(e).__name__}: {e}")
 
         with self._lock:
             if not self._chunks:
