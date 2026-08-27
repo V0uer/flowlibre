@@ -152,3 +152,40 @@ def test_traslape_real_mas_largo_con_pareja_debajo_del_umbral_no_se_resuelve():
     prev = "dijo que no puedo no"
     nxt = "no podo no hacerlo bien"
     assert merge_overlap(prev, nxt) == "dijo que no puedo no podo no hacerlo bien"
+
+
+def test_palabras_funcionales_cortas_no_se_confunden_con_traslape():
+    # Critical de esta ronda: SequenceMatcher(None, 'de', 'del').ratio() da
+    # exactamente 0.8, y esa es la forma general de una palabra corta contra
+    # una variante de un caracter mas ('un'/'una', 'se'/'sea', etc. dan lo
+    # mismo). Sin la regla de largo minimo, cada posicion del bloque
+    # "tiene un" / "tienen una" calificaba por su cuenta y el bloque entero
+    # se aceptaba como traslape sin serlo, comiendose "tienen una" -- perdida
+    # silenciosa de contenido real, sin dejar ni un duplicado visible.
+    prev = "el sistema tiene un"
+    nxt = "tienen una falla grave"
+    assert merge_overlap(prev, nxt) == "el sistema tiene un tienen una falla grave"
+
+
+def test_cadena_de_palabras_funcionales_cortas_no_se_come_varias():
+    # Variante encadenada: tres parejas de palabras funcionales cortas
+    # seguidas ('de'/'del', 'un'/'una', 'se'/'sea'), cada una a exactamente
+    # 0.8 de ratio. Antes de la regla de largo minimo esto calificaba un
+    # bloque de k=3 completo y se comia "del una sea" entero.
+    prev = "manda el reporte de un se"
+    nxt = "del una sea el correcto"
+    assert merge_overlap(prev, nxt) == "manda el reporte de un se del una sea el correcto"
+
+
+def test_regla_de_largo_minimo_token_por_token():
+    # Fija la regla misma, no un caso de merge_overlap completo: una pareja
+    # de tokens cortos casi identicos ('de'/'del', longitudes 2 y 3) no
+    # califica aunque su ratio de caracteres (0.8) cruce el umbral, porque
+    # alguno de los dos mide menos que MIN_LEN_DIFUSO (5) y se exige
+    # igualdad exacta. Una pareja larga con la misma diferencia de una letra
+    # ('completo'/'completos', longitudes 8 y 9) si califica porque ambos
+    # tokens llegan al largo minimo y el ratio (0.941) supera 0.8.
+    from flowlibre.merge import _tokens_coinciden
+
+    assert _tokens_coinciden("de", "del") is False
+    assert _tokens_coinciden("completo", "completos") is True

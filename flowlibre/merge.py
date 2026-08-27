@@ -51,11 +51,11 @@ Diseño actual: la calificacion de un bloque de k palabras es **binaria**, no
 un ratio a comparar entre tamaños. Un k **califica** si:
 
 1. Para cada una de las k posiciones, el token de `cola` y el de `cabeza`
-   (normalizados individualmente, no el bloque unido) tienen
-   `difflib.SequenceMatcher(None, tok_a, tok_b).ratio() >= 0.8` — con
-   `k == 1` la unica posicion exige igualdad exacta, no 0.8, porque con una
-   sola palabra de contexto una coincidencia difusa es casi siempre falso
-   positivo ("casa" / "caza").
+   (normalizados individualmente, no el bloque unido) *coinciden* segun la
+   regla de largo minimo de abajo — con `k == 1` la unica posicion siempre
+   exige igualdad exacta, sin importar el largo, porque con una sola palabra
+   de contexto una coincidencia difusa es casi siempre falso positivo
+   ("casa" / "caza").
 2. Al menos un token del bloque tiene contenido real (el filtro de bloques de
    pura puntuacion, sin cambios).
 
@@ -63,17 +63,44 @@ Como ya no hay ratios de distinta escala que comparar, "el traslape mas largo
 que califica" vuelve a ser un criterio bien definido: se recorren los k de
 mayor a menor y se devuelve el primero que califica.
 
+Regla de largo minimo para la comparacion difusa (MIN_LEN_DIFUSO = 5)
+------------------------------------------------------------------------
+El umbral por token (0.8) tiene un problema que no aparece con palabras
+largas pero es sistematico con palabras cortas: `SequenceMatcher(None, "de",
+"del").ratio()` da **exactamente 0.8**, y esa no es una casualidad de ese
+par — es la forma general de una palabra corta contra una variante de un
+caracter mas que la contiene. El español tiene medio diccionario de palabras
+funcionales asi: de/del, la/las, el/del, un/una, se/sea, le/les, lo/los,
+mi/mis, tu/tus, me/mes, si/sin, va/vas, da/dan — todas dan 0.8 exacto. Como
+el criterio de un bloque es "todas las parejas califican", bastaba con que
+cada posicion de un bloque cayera en uno de estos pares para que el bloque
+entero calificara **sin que hubiera traslape real**, comiendose contenido de
+`nxt` sin dejar ni un duplicado visible que alguien notara (peor que el
+problema que esto reemplazo: al menos un duplicado se ve; una palabra borrada
+en silencio no).
+
+La causa de fondo: un ratio difuso sobre un token de 2 o 3 caracteres no
+significa nada. En una palabra tan corta, una letra de diferencia es una
+palabra completamente distinta, no una variacion de transcripcion — al
+reves de "completo"/"completos", donde una letra de diferencia sobre 8-9 es
+ruido de Whisper. Por eso la comparacion difusa exige suficiente señal para
+ser confiable: **una pareja de tokens califica con ratio >= 0.8 solo si
+ambos tokens tienen `MIN_LEN_DIFUSO` (5) caracteres o mas; si cualquiera de
+los dos es mas corto, se exige igualdad exacta.** "completo"/"completos"
+(8 y 9) sigue calificando por ratio (0.941); "de"/"del" (2 y 3) y
+"un"/"una" (2 y 3) ahora exigen exactitud y no califican.
+
 Limitacion conocida (sin resolver): un traslape real mas largo puede seguir
 perdiendo contra un match exacto de una sola palabra si alguna pareja del
-bloque largo no llega a 0.8. Ejemplo verificado:
+bloque largo no coincide. Ejemplo verificado:
 `merge_overlap('dijo que no puedo no', 'no podo no hacerlo bien')` — el
-traslape real es "no puedo no" / "no podo no" (k=3), pero la pareja
-"puedo"/"podo" da ratio 0.667 (no ~0.89 como se estimo al diseñar esto), por
-debajo de 0.8, asi que k=3 no califica y gana k=1 (el "no" suelto), dejando
-"puedo no podo no" duplicado a medias. No se subio el umbral para forzar este
-caso porque bajarlo tambien acepta pares mas flojos en todos los demas
-bloques de 2+ palabras. Ver `tests/test_merge.py` y el reporte de la Task 6
-para los numeros completos.
+traslape real es "no puedo no" / "no podo no" (k=3), pero "podo" mide 4
+caracteres (< MIN_LEN_DIFUSO), asi que esa pareja exige igualdad exacta y
+"puedo" != "podo" la hace fallar; k=3 no califica y gana k=1 (el "no"
+suelto), dejando "puedo no podo no" duplicado a medias. No se bajo
+MIN_LEN_DIFUSO ni se ajusto el umbral para forzar este caso porque eso
+reabriria el agujero de las palabras funcionales cortas. Ver
+`tests/test_merge.py` y el reporte de la Task 6 para los numeros completos.
 
 Limitacion conocida: repeticion legitima en la frontera del corte
 -------------------------------------------------------------------
@@ -113,10 +140,26 @@ _PUNCT = {"Pc", "Pd", "Pe", "Pf", "Pi", "Po", "Ps"}
 # tokens pasan este umbral), no un numero a competir entre tamaños de k.
 _TOKEN_FUZZY_THRESHOLD = 0.8
 
+# Largo minimo (en caracteres normalizados) que deben tener AMBOS tokens de
+# una pareja para que la comparacion difusa aplique. Por debajo de este largo
+# el ratio de caracteres deja de significar "variacion de transcripcion" y
+# empieza a significar "palabra corta cualquiera parecida a otra" (de/del,
+# un/una, etc. dan 0.8 exacto sin ser el mismo traslape). Ver docstring.
+_MIN_LEN_DIFUSO = 5
+
 
 def _norm(word: str) -> str:
     """Palabra sin puntuacion ni mayusculas, para comparar."""
     return "".join(c for c in word.lower() if unicodedata.category(c) not in _PUNCT)
+
+
+def _tokens_coinciden(tok_a: str, tok_b: str) -> bool:
+    """True si dos tokens normalizados cuentan como la misma palabra."""
+    if len(tok_a) < _MIN_LEN_DIFUSO or len(tok_b) < _MIN_LEN_DIFUSO:
+        # Palabra corta: una letra de diferencia es una palabra distinta, no
+        # ruido de transcripcion. Se exige igualdad exacta.
+        return tok_a == tok_b
+    return difflib.SequenceMatcher(None, tok_a, tok_b).ratio() >= _TOKEN_FUZZY_THRESHOLD
 
 
 def _califica(cola: list[str], cabeza: list[str], k: int) -> bool:
@@ -129,14 +172,12 @@ def _califica(cola: list[str], cabeza: list[str], k: int) -> bool:
         return False
 
     if k == 1:
-        # Con una sola palabra de contexto, un umbral difuso seria casi
-        # siempre falso positivo ("casa" / "caza"). Se exige exactitud.
+        # Con una sola palabra de contexto, una coincidencia difusa seria
+        # casi siempre falso positivo ("casa" / "caza"). Se exige exactitud
+        # sin importar el largo.
         return cola == cabeza
 
-    return all(
-        difflib.SequenceMatcher(None, tok_a, tok_b).ratio() >= _TOKEN_FUZZY_THRESHOLD
-        for tok_a, tok_b in zip(cola, cabeza)
-    )
+    return all(_tokens_coinciden(tok_a, tok_b) for tok_a, tok_b in zip(cola, cabeza))
 
 
 def merge_overlap(prev: str, nxt: str, max_words: int = 15) -> str:
