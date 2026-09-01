@@ -30,3 +30,33 @@ def test_el_origen_arranca_con_el_nombre_del_modelo():
     """transcribe() reintenta en CPU con self._origen; si nace vacio, el reintento
     (que corre justo cuando la GPU ya fallo) truena con AttributeError."""
     assert Transcriber("large-v3-turbo", "int8_float16")._origen == "large-v3-turbo"
+
+
+# --- instalada: el modelo puede estar en dos lugares ---
+
+
+def test_instalada_gana_el_modelo_descargado_sobre_el_empaquetado(monkeypatch, tmp_path):
+    """El modelo grande se descarga después de instalar (va a %APPDATA%), pero el
+    bundle puede traer uno chico. Si ganara el empaquetado, la descarga de 800 MB
+    no serviría de nada y nadie vería un error."""
+    import flowlibre.paths as paths
+    datos, bundle = tmp_path / "datos", tmp_path / "bundle"
+    (datos / "models" / "turbo-int8").mkdir(parents=True)
+    (bundle / "models" / "turbo-int8").mkdir(parents=True)
+    monkeypatch.setattr(paths, "data_dir", lambda: datos)
+    monkeypatch.setattr(paths, "resource_dir", lambda: bundle)
+
+    t = Transcriber("models/turbo-int8", "int8_float16")
+    assert t._resolve_origen() == str(datos / "models" / "turbo-int8")
+
+
+def test_instalada_cae_al_modelo_empaquetado(monkeypatch, tmp_path):
+    import flowlibre.paths as paths
+    datos, bundle = tmp_path / "datos", tmp_path / "bundle"
+    datos.mkdir()
+    (bundle / "models" / "small-int8").mkdir(parents=True)
+    monkeypatch.setattr(paths, "data_dir", lambda: datos)
+    monkeypatch.setattr(paths, "resource_dir", lambda: bundle)
+
+    t = Transcriber("models/small-int8", "int8_float16")
+    assert t._resolve_origen() == str(bundle / "models" / "small-int8")

@@ -54,13 +54,20 @@ class Transcriber:
         """
         from pathlib import Path
 
-        from .config import ROOT
+        from . import paths
 
         candidato = Path(self.model_name)
-        if not candidato.is_absolute():
-            candidato = ROOT / self.model_name
-        if candidato.is_dir():
-            return str(candidato)
+        if candidato.is_absolute():
+            if candidato.is_dir():
+                return str(candidato)
+        else:
+            # Primero lo descargado por el usuario, luego lo que trae el paquete:
+            # el modelo grande se baja despues de instalar y tiene que ganarle al
+            # chico que venga empaquetado.
+            for base in (paths.data_dir(), paths.resource_dir()):
+                if (base / self.model_name).is_dir():
+                    return str(base / self.model_name)
+            candidato = paths.data_dir() / self.model_name
         if "/" in self.model_name or "\\" in self.model_name:
             print(f"[FlowLibre] No encuentro el modelo local en {candidato}. "
                   f"Genéralo con: .venv/Scripts/python.exe tools/quantize_model.py")

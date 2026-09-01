@@ -7,12 +7,19 @@ from pathlib import Path
 
 import yaml
 
+from . import paths as _paths
+
 # Raíz del proyecto: la carpeta que contiene el paquete flowlibre/
-ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = ROOT / "config.yaml"
-DICTIONARY_PATH = ROOT / "dictionary.txt"
-COMMANDS_PATH = ROOT / "commands.json"
-HISTORY_PATH = ROOT / "history.jsonl"
+ROOT = _paths.ROOT
+
+# Los datos del usuario NO viven junto al código cuando la app está instalada
+# (ver flowlibre/paths.py): esa carpeta es de solo lectura y la reemplaza cada
+# actualización. Corriendo desde el código, DATA_DIR es la raíz de siempre.
+DATA_DIR = _paths.data_dir()
+CONFIG_PATH = DATA_DIR / "config.yaml"
+DICTIONARY_PATH = DATA_DIR / "dictionary.txt"
+COMMANDS_PATH = DATA_DIR / "commands.json"
+HISTORY_PATH = DATA_DIR / "history.jsonl"
 
 DEFAULTS = {
     "hotkey": "ctrl+alt+space",

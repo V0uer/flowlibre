@@ -10,6 +10,7 @@ import sys
 import winreg
 from pathlib import Path
 
+from . import paths
 from .config import ROOT
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -17,6 +18,14 @@ APP_NAME = "FlowLibre"
 
 
 def _command() -> str:
+    """Lo que Windows ejecuta al iniciar sesión.
+
+    Instalada no hay venv ni launcher `.pyw`: hay un ejecutable. Y las comillas
+    no son cosmética — una ruta con espacios sin ellas hace que el registro Run
+    intente correr `C:\\Program`, y la app no arranca sin decir nada.
+    """
+    if paths.esta_empaquetada():
+        return f'"{Path(sys.executable).resolve()}"'
     pythonw = Path(sys.executable).parent / "pythonw.exe"
     if not pythonw.exists():
         pythonw = Path(sys.executable)
