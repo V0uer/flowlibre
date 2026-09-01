@@ -162,6 +162,18 @@ class FlowLibreApp:
             self._dashboard.show()
         self.overlay.submit(_open)
 
+    def abrir_wizard(self) -> None:
+        """Primer arranque: los cuatro pasos de configuracion.
+
+        Va por el hilo de tkinter como el panel. La app YA esta corriendo detras
+        del wizard a proposito: si alguien lo cierra con la X, queda una app
+        funcional con los defaults, no un programa a medio configurar.
+        """
+        def _abrir() -> None:
+            from .wizard import Wizard
+            Wizard(self.overlay.root, self)
+        self.overlay.submit(_abrir)
+
     def _set_status(self, status: str) -> None:
         self.status = status
         if self.on_status_change:

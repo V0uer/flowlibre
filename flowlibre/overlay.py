@@ -29,6 +29,33 @@ CHECK_BG = "#ffffff"        # círculo blanco relleno
 CHECK_COLOR = "#000000"     # palomita negra delgada
 
 
+def escala_nivel(level) -> float:
+    """Nivel crudo del micro (0..1) a altura de barra (0..1).
+
+    El x12 no es arbitrario: el habla normal ronda 0.05-0.08 de nivel RMS, y sin
+    amplificar la onda se ve plana y la gente cree que el microfono no sirve.
+    Vive aqui, en un solo lugar, porque el wizard dibuja el mismo medidor: dos
+    escalas distintas mostrarian dos niveles distintos para el mismo audio.
+    """
+    try:
+        return min(1.0, float(level) * 12)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def dibujar_onda(canvas, niveles, x0: float, x1: float, mid: float,
+                 alto: float, color: str = WAVE_COLOR) -> None:
+    """Las barras verticales del medidor, centradas en `mid`."""
+    n = len(niveles)
+    if n < 2:
+        return
+    gap = (x1 - x0) / (n - 1)
+    for i, lv in enumerate(niveles):
+        x = x0 + i * gap
+        h = max(1.0, lv * (alto - 12) / 2)
+        canvas.create_line(x, mid - h, x, mid + h, fill=color, width=2, capstyle="round")
+
+
 class Overlay:
     """Estados: hidden | recording (onda) | processing (puntos pulsando)."""
 
@@ -186,19 +213,11 @@ class Overlay:
             )
             # Onda al centro
             try:
-                level = float(self.get_level())
+                level = self.get_level()
             except Exception:
                 level = 0.0
-            self._levels.append(min(1.0, level * 12))
-            x0, x1 = BTN + 6, W - BTN - 6
-            gap = (x1 - x0) / (BARS - 1)
-            for i, lv in enumerate(self._levels):
-                x = x0 + i * gap
-                h = max(1.0, lv * (H - 12) / 2)
-                c.create_line(
-                    x, mid - h, x, mid + h,
-                    fill=WAVE_COLOR, width=2, capstyle="round",
-                )
+            self._levels.append(escala_nivel(level))
+            dibujar_onda(c, self._levels, BTN + 6, W - BTN - 6, mid, H)
         else:  # processing: línea con un destello que la recorre
             x0, x1 = 14, W - 14
             c.create_line(x0, mid, x1, mid, fill=LINE_DIM, width=2, capstyle="round")
