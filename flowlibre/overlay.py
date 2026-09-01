@@ -12,6 +12,8 @@ import queue
 import threading
 import tkinter as tk
 
+from .iconos import ruta_icono_ventana
+
 W, H = 104, 24
 BARS = 11
 BTN = 24                    # ancho reservado a cada botón (X / palomita)
@@ -60,6 +62,16 @@ class Overlay:
 
     def _run(self) -> None:
         self.root = tk.Tk()
+        # El ícono de la raíz lo heredan todas las ventanas (el panel, y la
+        # entrada en la barra de tareas). Si falta el archivo, Tk usa el suyo:
+        # un ícono decorativo no puede impedir que la app arranque.
+        icono = ruta_icono_ventana()
+        if icono:
+            try:
+                self._icono_tk = tk.PhotoImage(file=icono)
+                self.root.iconphoto(True, self._icono_tk)
+            except tk.TclError as e:
+                print(f"[FlowLibre] No se pudo cargar el ícono de ventana: {e}")
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.attributes("-transparentcolor", TRANSPARENT)

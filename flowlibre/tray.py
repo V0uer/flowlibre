@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 
 from . import autostart
 from .config import CONFIG_PATH, HISTORY_PATH
+from .iconos import ICONOS_DIR
 
 COLORS = {
     "listo": (70, 130, 240),       # azul
@@ -25,7 +26,12 @@ FORMAT_MODES = ["mensaje", "email", "notas", "crudo"]
 ENGINES = [("ollama", "Motor A — Ollama (local)"), ("claude", "Motor B — Claude (API)")]
 
 
-def _make_icon(color: tuple[int, int, int]) -> Image.Image:
+def _icono_dibujado(color: tuple[int, int, int]) -> Image.Image:
+    """Respaldo: el micrófono a mano de siempre, por si faltan los assets.
+
+    Quedarse sin ícono de bandeja no es un problema estético: la bandeja es la
+    única forma de abrir el panel y de salir de la app.
+    """
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     d.ellipse([8, 8, 56, 56], fill=color + (255,))
@@ -36,11 +42,21 @@ def _make_icon(color: tuple[int, int, int]) -> Image.Image:
     return img
 
 
+def _make_icon(estado: str) -> Image.Image:
+    """La marca de FlowLibre del color del estado (ver tools/make_icons.py)."""
+    png = ICONOS_DIR / f"tray-{estado}.png"
+    try:
+        with Image.open(png) as img:
+            return img.convert("RGBA")
+    except OSError:
+        return _icono_dibujado(COLORS.get(estado, COLORS["listo"]))
+
+
 class Tray:
     def __init__(self, app) -> None:
         self.app = app
         self.icon = pystray.Icon(
-            "FlowLibre", _make_icon(COLORS["listo"]), "FlowLibre — listo",
+            "FlowLibre", _make_icon("listo"), "FlowLibre — listo",
             menu=self._build_menu(),
         )
         app.on_status_change = self._on_status
@@ -50,7 +66,7 @@ class Tray:
     def _on_status(self, status: str) -> None:
         if not self.app.enabled:
             status = "apagado"
-        self.icon.icon = _make_icon(COLORS.get(status, COLORS["listo"]))
+        self.icon.icon = _make_icon(status)
         self.icon.title = f"FlowLibre — {status}"
 
     # --- menú ---
