@@ -5,3 +5,9 @@ debug.log
 history.jsonl
 models/
 tests/fixtures/*.wav
+
+# Artefactos de empaquetado (se regeneran con packaging/flowlibre.spec y .iss)
+packaging/dist/
+packaging/build/
+packaging/build-debug/
+packaging/salida/

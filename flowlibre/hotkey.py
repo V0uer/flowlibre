@@ -9,8 +9,12 @@ from pathlib import Path
 
 import keyboard
 
-# Log de diagnóstico (activado mientras depuramos el hotkey).
-DEBUG_LOG = Path(__file__).resolve().parent.parent / "debug.log"
+from . import paths
+
+# Log de diagnóstico (activado mientras depuramos el hotkey). Va al directorio
+# de datos, no junto al código: instalada, la carpeta del programa es de solo
+# lectura y el log es lo primero que se pide cuando algo falla.
+DEBUG_LOG = paths.data_dir() / "debug.log"
 
 
 def _dbg(msg: str) -> None:
