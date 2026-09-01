@@ -38,6 +38,8 @@ class FlowLibreApp:
         self.music_hotkeys: HotkeyManager | None = None
         self.cleaner = None      # motor de limpieza activo, cacheado (ver _get_cleaner)
         self._dashboard = None
+        self.actualizacion = None        # Novedad detectada, si hay
+        self.actualizacion_lista = None  # ruta del instalador ya bajado
         self.enabled = True
         self._active_prefix = ""     # prefijo del dictado en curso ("" = dictado normal)
         self._stream_stt = None      # StreamingTranscriber del dictado en curso
@@ -69,6 +71,31 @@ class FlowLibreApp:
         threading.Thread(target=self.transcriber.load, daemon=True).start()
         # Avisar temprano si el motor activo no está listo (no bloquea).
         threading.Thread(target=self._check_engine, daemon=True).start()
+        threading.Thread(target=self._buscar_actualizacion, daemon=True).start()
+
+    def _buscar_actualizacion(self) -> None:
+        """Chequeo de versión nueva. En un hilo aparte y a prueba de todo: esto
+        corre en cada arranque y no puede retrasar ni tumbar el de nadie."""
+        try:
+            from . import actualizacion
+
+            novedad = actualizacion.chequear_si_toca(self.config)
+            if not novedad:
+                return
+            self.actualizacion = novedad
+            print(f"[FlowLibre] Hay una versión nueva: {novedad.version}")
+
+            def listo(ruta) -> None:
+                # Se baja sola, pero NO se aplica sola: reemplazar la app
+                # mientras alguien dicta es la peor forma de enterarse de que
+                # había una versión nueva. Queda esperando en la bandeja.
+                self.actualizacion_lista = ruta
+                if ruta and self.on_status_change:
+                    self.on_status_change(self.status)
+
+            actualizacion.descargar_en_segundo_plano(novedad, al_terminar=listo)
+        except Exception as e:
+            print(f"[FlowLibre] Chequeo de actualización fallido: {e}")
 
     def _register_music_hotkey(self) -> None:
         """2º atajo opcional: dicta en crudo y antepone music_prefix (ej. "m!p ").

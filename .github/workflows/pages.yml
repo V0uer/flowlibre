@@ -1,0 +1,39 @@
+# Publica pagina/ en GitHub Pages.
+#
+# Se despliega desde Actions y no desde una rama, para que Pages sirva SOLO
+# pagina/ — con "deploy from branch" tendria que ser /docs o la raiz, y ahi
+# viven los specs y el ledger del proyecto, que no son para publico.
+#
+# Requiere activarlo una vez a mano: Settings -> Pages -> Source: GitHub Actions.
+
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["pagina/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pagina
+      - id: deploy
+        uses: actions/deploy-pages@v4

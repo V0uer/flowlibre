@@ -1,4 +1,4 @@
-; Instalador de FlowLibre para Windows.
+﻿; Instalador de FlowLibre para Windows.
 ;
 ; Construir:  "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\flowlibre.iss
 ; Requiere que packaging\dist\FlowLibre exista (ver packaging\flowlibre.spec).
@@ -14,7 +14,9 @@
 ;   instrucciones para saltarlo van en la pagina de descarga y en el README.
 
 #define Nombre "FlowLibre"
-#define Version "2.0.0"
+; La version NO se escribe aqui: sale de flowlibre/__init__.py, que el
+; .spec vuelca a packaging\VERSION al construir el bundle.
+#define Version Trim(FileRead(FileOpen("VERSION")))
 #define Autor "V0uer"
 #define Ejecutable "FlowLibre.exe"
 

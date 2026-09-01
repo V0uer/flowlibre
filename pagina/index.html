@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlowLibre — dictado por voz</title>
+<meta name="description" content="Dictado por voz local para Windows. Manten un atajo, habla, y el texto aparece donde tengas el cursor.">
+<style>
+  :root {
+    --bg: #f4f2ee; --card: #ffffff; --text: #1a1a1a; --muted: #6f6f6d;
+    --line: #e4e1da; --accent: #1a1a1a; --accent-fg: #ffffff;
+    --warn-bg: #fff6e0; --warn-line: #e8d5a3; --warn-text: #6b4f12;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161513; --card: #201f1c; --text: #f2f0eb; --muted: #a09d97;
+      --line: #302e2a; --accent: #f2f0eb; --accent-fg: #161513;
+      --warn-bg: #2b2312; --warn-line: #4d3f1d; --warn-text: #e8cf95;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  .envoltura { max-width: 720px; margin: 0 auto; padding: 72px 24px 96px; }
+  h1 { font-size: 44px; line-height: 1.1; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .lema { font-size: 20px; color: var(--muted); margin: 0 0 40px; }
+  .descarga {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 28px; margin-bottom: 16px;
+  }
+  .boton {
+    display: inline-block; background: var(--accent); color: var(--accent-fg);
+    text-decoration: none; font-weight: 600; padding: 14px 28px;
+    border-radius: 10px; font-size: 17px;
+  }
+  .boton.secundario {
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    font-weight: 400; padding: 12px 22px; font-size: 15px;
+  }
+  .meta { color: var(--muted); font-size: 14px; margin-top: 12px; }
+  .aviso {
+    background: var(--warn-bg); border: 1px solid var(--warn-line);
+    color: var(--warn-text); border-radius: 12px; padding: 20px 24px; margin: 32px 0;
+  }
+  .aviso h2 { font-size: 17px; margin: 0 0 10px; }
+  .aviso ol { margin: 0; padding-left: 20px; }
+  h2.seccion { font-size: 22px; margin: 48px 0 12px; }
+  ul.pasos { padding-left: 20px; }
+  code {
+    background: var(--card); border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 6px; font-size: 14px;
+  }
+  footer { margin-top: 64px; color: var(--muted); font-size: 14px;
+           border-top: 1px solid var(--line); padding-top: 24px; }
+  a { color: inherit; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="envoltura">
+
+  <h1>FlowLibre</h1>
+  <p class="lema">Manten un atajo, habla, y el texto aparece donde tengas el cursor.
+     La transcripcion corre en tu maquina.</p>
+
+  <div class="descarga">
+    <!-- El principal se elige por sistema operativo; el otro queda de secundario.
+         Si el JS no corre, se ven los dos, que es el peor caso aceptable. -->
+    <p id="principal-windows">
+      <a class="boton" href="#" data-descarga>Descargar para Windows</a>
+    </p>
+    <p id="principal-mac" hidden>
+      <a class="boton" href="#" data-descarga-mac>Descargar para macOS</a>
+      <span class="meta">Todavia no disponible — la version de Mac esta en camino.</span>
+    </p>
+    <p class="meta">
+      Instalador de ~71 MB. Windows 10 u 11.
+      <a href="#" data-otro>Tambien hay version para macOS</a>.
+    </p>
+  </div>
+
+  <!-- El spec marca este susto como el riesgo de probabilidad ALTA. Va visible,
+       no escondido en un acordeon: la gente que lo ve sin explicacion cancela la
+       instalacion y no vuelve. -->
+  <div class="aviso">
+    <h2>Windows va a decir "Windows protegio tu PC". Es normal.</h2>
+    <p>FlowLibre no esta firmado con un certificado de codigo (cuestan varios
+       cientos de dolares al ano). SmartScreen avisa de <em>todo</em> lo que no
+       reconoce, no de algo que haya encontrado malo.</p>
+    <ol>
+      <li>Haz clic en <strong>Mas informacion</strong>.</li>
+      <li>Haz clic en <strong>Ejecutar de todas formas</strong>.</li>
+    </ol>
+  </div>
+
+  <h2 class="seccion">Que pasa despues de instalar</h2>
+  <ul class="pasos">
+    <li>Se abre un asistente de cuatro pasos: el atajo, la limpieza de texto
+        (opcional), el microfono y la descarga del modelo.</li>
+    <li>Si tienes una GPU NVIDIA, baja el paquete de aceleracion. Si se corta,
+        retoma donde se quedo.</li>
+    <li>Sin GPU tambien funciona: usa un modelo mas ligero en el procesador.</li>
+    <li>FlowLibre vive en la bandeja del sistema. Desde ahi se abre el panel y
+        se sale.</li>
+  </ul>
+
+  <h2 class="seccion">Tus datos</h2>
+  <p>La transcripcion es local: el audio no sale de tu maquina. El historial de
+     dictados vive en <code>%APPDATA%\FlowLibre</code> y el desinstalador
+     <strong>no lo borra</strong> — te pregunta.</p>
+  <p>La limpieza del texto es opcional. Si la activas con tu API key de
+     Anthropic, el <em>texto</em> transcrito (nunca el audio) se manda a esa API
+     para pulirlo. Sin key, FlowLibre escribe lo que dictas tal cual.</p>
+
+  <footer>
+    <p><a href="https://github.com/jorgebarreda/flowlibre">Codigo en GitHub</a> ·
+       <a href="https://github.com/jorgebarreda/flowlibre/releases">Todas las versiones</a></p>
+  </footer>
+
+</div>
+
+<script>
+  // El release mas reciente decide el link: asi la pagina no hay que tocarla en
+  // cada version. Si la API de GitHub no contesta, el boton cae a la pagina de
+  // releases, que sigue siendo una descarga a dos clics.
+  const REPO = "jorgebarreda/flowlibre";
+  const RESPALDO = `https://github.com/${REPO}/releases/latest`;
+
+  const esMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  if (esMac) {
+    document.getElementById("principal-windows").hidden = true;
+    document.getElementById("principal-mac").hidden = false;
+  }
+  document.querySelector("[data-otro]").textContent =
+    esMac ? "Tambien hay version para Windows" : "Tambien hay version para macOS";
+  document.querySelector("[data-otro]").href = RESPALDO;
+
+  const boton = document.querySelector("[data-descarga]");
+  boton.href = RESPALDO;
+  fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(d => {
+      const exe = (d.assets || []).find(a => a.name.toLowerCase().endsWith(".exe"));
+      if (exe) {
+        boton.href = exe.browser_download_url;
+        boton.textContent = `Descargar para Windows · ${d.tag_name}`;
+      }
+    })
+    .catch(() => {});   // el respaldo ya esta puesto
+</script>
+</body>
+</html>

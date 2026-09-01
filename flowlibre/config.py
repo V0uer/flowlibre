@@ -42,6 +42,7 @@ DEFAULTS = {
     "claude_timeout_s": 4.0,
     "claude_fallback_to_ollama": True,
     "inject_method": "clipboard",    # clipboard | typing
+    "auto_update": True,             # buscar version nueva al arrancar
 }
 
 VALID = {
@@ -51,6 +52,7 @@ VALID = {
     "inject_method": {"clipboard", "typing"},
     "music_send_enter": {True, False},
     "streaming_stt": {True, False},
+    "auto_update": {True, False},
 }
 
 

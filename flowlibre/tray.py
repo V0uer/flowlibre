@@ -104,6 +104,16 @@ class Tray:
                 "Iniciar con Windows", self._toggle_autostart,
                 checked=lambda item: autostart.is_enabled(),
             ),
+            pystray.MenuItem(
+                "Buscar actualizaciones al arrancar", self._toggle_auto_update,
+                checked=lambda item: self.app.config.auto_update,
+            ),
+            # visible=... hace que el aviso solo aparezca cuando hay algo que
+            # ofrecer. Un menú con "Actualizar a None" es peor que ninguno.
+            pystray.MenuItem(
+                self._texto_actualizacion, self._instalar_actualizacion,
+                visible=lambda item: self.app.actualizacion is not None,
+            ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Salir", self._quit),
         )
@@ -134,6 +144,28 @@ class Tray:
             autostart.disable()
         else:
             autostart.enable()
+
+    def _texto_actualizacion(self, item=None) -> str:
+        nov = self.app.actualizacion
+        if nov is None:
+            return "Actualizar"
+        if self.app.actualizacion_lista:
+            return f"Instalar la versión {nov.version} y reiniciar"
+        return f"Descargando la versión {nov.version}…"
+
+    def _instalar_actualizacion(self) -> None:
+        """Solo hace algo cuando el instalador ya está en disco."""
+        from . import actualizacion
+
+        ruta = self.app.actualizacion_lista
+        if not ruta:
+            return
+        self.app.shutdown()
+        self.icon.stop()
+        actualizacion.aplicar(ruta)
+
+    def _toggle_auto_update(self) -> None:
+        self.app.config.set("auto_update", not self.app.config.auto_update)
 
     def _quit(self) -> None:
         self.app.shutdown()

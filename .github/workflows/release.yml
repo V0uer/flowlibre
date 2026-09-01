@@ -1,0 +1,84 @@
+# Construye el instalador y publica el release al etiquetar.
+#
+#   git tag v2.0.1 && git push origin v2.0.1
+#
+# El tag manda el nombre del release, pero NO la version del programa: esa sale
+# de flowlibre/__init__.py y el job falla si no cuadran. Un release "v2.0.1" que
+# instala una app que se cree 2.0.0 se ofrece actualizar a si misma en bucle, en
+# cada arranque, en la maquina de todos.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write        # necesario para crear el release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: El tag y flowlibre/__init__.py tienen que decir lo mismo
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(python -c "import re,pathlib; print(re.search(r'\"([^\"]+)\"', pathlib.Path('flowlibre/__init__.py').read_text()).group(1))")
+          echo "tag=$tag  paquete=$pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::El tag dice $tag y flowlibre/__init__.py dice $pkg."
+            exit 1
+          fi
+
+      - name: Dependencias, sin las 1.94 GB de CUDA
+        shell: bash
+        run: |
+          # Las libs de NVIDIA se excluyen del bundle a proposito (ver
+          # packaging/flowlibre.spec) y se descargan despues solo en maquinas con
+          # GPU. Instalarlas en el runner serian ~2 GB y varios minutos por build
+          # para tirarlas a la basura en el paso siguiente.
+          grep -v '^nvidia-' requirements.txt > requirements-ci.txt
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-ci.txt pyinstaller
+
+      - name: Pruebas
+        run: python -m pytest tests/ -q
+
+      - name: Bundle
+        run: python -m PyInstaller packaging/flowlibre.spec --noconfirm
+
+      - name: Instalador
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc packaging\flowlibre.iss
+
+      - name: El instalador no puede traer CUDA adentro
+        shell: bash
+        run: |
+          # El criterio 3 del spec pide <= 200 MB. Si alguna dependencia futura
+          # vuelve a arrastrar las DLLs de NVIDIA, el peso lo delata — que es
+          # exactamente como se encontro el bundle vacio de C40.
+          exe=$(ls packaging/salida/*.exe | head -1)
+          mb=$(( $(stat -c%s "$exe") / 1048576 ))
+          echo "instalador: ${mb} MB"
+          if [ "$mb" -gt 200 ]; then
+            echo "::error::El instalador pesa ${mb} MB, sobre el limite de 200 del spec."
+            exit 1
+          fi
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/salida/*.exe
+          generate_release_notes: true
+          fail_on_unmatched_files: true
