@@ -14,6 +14,11 @@ import numpy as np
 
 from .audio import SAMPLE_RATE
 
+# A donde caer si el modelo local configurado no aparece. Tiene que ser un
+# nombre que Hugging Face de verdad tenga: es la red de seguridad, no puede
+# fallar ella tambien.
+RESPALDO = "small"
+
 
 def _add_nvidia_dll_dirs() -> None:
     """Registra los directorios bin/ de los paquetes pip de NVIDIA (Windows).
@@ -85,8 +90,15 @@ class Transcriber:
                     return str(base / self.model_name)
             candidato = paths.data_dir() / self.model_name
         if "/" in self.model_name or "\\" in self.model_name:
+            # NUNCA devolver la ruta: faster-whisper trata cualquier cadena como
+            # repo_id de Hugging Face, y pedirle "models/large-v3-turbo-int8" a
+            # la API devuelve un 401 que mata el hilo de carga hablando de
+            # credenciales. En la app instalada (console=False) ese traceback no
+            # lo ve nadie y el sintoma es "no transcribe".
             print(f"[FlowLibre] No encuentro el modelo local en {candidato}. "
+                  f"Usando '{RESPALDO}' mientras tanto. "
                   f"Genéralo con: .venv/Scripts/python.exe tools/quantize_model.py")
+            return RESPALDO
         return self.model_name
 
     def load(self) -> None:

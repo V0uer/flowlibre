@@ -29,7 +29,12 @@ VERSION = _ns["__version__"]
 
 datos = [
     (str(ROOT / "assets" / "icons"), "assets/icons"),
-    (str(ROOT / "config.yaml"), "."),
+    # La PLANTILLA, no el config.yaml de desarrollo. Empaquetar el real le
+    # manda a cada usuario el atajo del autor, su microfono Elgato, y una ruta a
+    # un modelo local que en su maquina no existe — que faster-whisper le pide a
+    # Hugging Face como si fuera un repo, con un 401 que mata el hilo de carga
+    # sin que nadie lo vea. Lo caza tests/test_plantilla_config.py.
+    (str(ROOT / "packaging" / "config.plantilla.yaml"), "."),
     (str(ROOT / "commands.json"), "."),
     (str(ROOT / "dictionary.txt"), "."),
 ]

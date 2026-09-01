@@ -17,13 +17,21 @@ def test_un_nombre_suelto_se_deja_para_hugging_face():
     assert Transcriber("large-v3-turbo", "int8_float16")._resolve_origen() == "large-v3-turbo"
 
 
-def test_una_ruta_que_no_existe_avisa_con_el_comando_para_generarla(capsys):
-    """models/ esta en .gitignore: en un clon nuevo la carpeta NO existe, y el
-    error de Hugging Face ('repo models/... not found') no dice como arreglarlo."""
+def test_una_ruta_que_no_existe_cae_a_un_modelo_real_y_avisa(capsys):
+    """Una ruta local que no existe NO se le puede pasar a Hugging Face.
+
+    faster-whisper trata cualquier cadena como repo_id: le pide
+    `models/large-v3-turbo-int8` a la API de HF, recibe un 401, y el hilo de
+    carga muere con un traceback que habla de credenciales. En la app instalada
+    ese hilo es invisible (console=False) y el sintoma es "no transcribe".
+
+    Esto es exactamente lo que le pasaba a cada instalacion limpia, porque el
+    bundle sembraba el config.yaml de desarrollo, con la ruta del int8 del autor.
+    """
     t = Transcriber("models/no-existe-int8", "int8_float16")
-    assert t._resolve_origen() == "models/no-existe-int8"
+    assert t._resolve_origen() == "small", "le paso una ruta local a Hugging Face"
     salida = capsys.readouterr().out
-    assert "quantize_model.py" in salida
+    assert "quantize_model.py" in salida, "perdio la pista de como generarlo"
 
 
 def test_el_origen_arranca_con_el_nombre_del_modelo():
