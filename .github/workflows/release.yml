@@ -32,7 +32,11 @@ jobs:
         shell: bash
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          pkg=$(python -c "import re,pathlib; print(re.search(r'\"([^\"]+)\"', pathlib.Path('flowlibre/__init__.py').read_text()).group(1))")
+          # exec del __init__.py, igual que packaging/flowlibre.spec: un solo
+          # mecanismo para leer la version. Un regex de comillas aqui agarraba
+          # el docstring del modulo y el job fallaba comparando el tag contra
+          # "FlowLibre - dictado por voz local...".
+          pkg=$(python -c "ns={}; exec(open('flowlibre/__init__.py',encoding='utf-8').read(), ns); print(ns['__version__'])")
           echo "tag=$tag  paquete=$pkg"
           if [ "$tag" != "$pkg" ]; then
             echo "::error::El tag dice $tag y flowlibre/__init__.py dice $pkg."
