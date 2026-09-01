@@ -39,7 +39,10 @@ microphone: Wave Link MicrophoneFX (Elgato
 # --- Whisper (transcripción local en GPU) ---
 # Modelos: "small" (~0.5GB VRAM) | "medium" (~1.5GB) | "large-v3-turbo" (recomendado:
 # más preciso que medium y ~4x más rápido) | "large-v3" (~3.5GB)
-whisper_model: "large-v3-turbo"
+# Ruta local al modelo cuantizado (generado con tools/quantize_model.py).
+# También acepta un nombre de modelo ("large-v3-turbo", "medium", "small"),
+# que se descarga de Hugging Face al primer uso.
+whisper_model: "models/large-v3-turbo-int8"
 whisper_compute_type: "int8_float16"
 # Búsqueda del decodificador. 1 = más rápido. Subir a 5 solo si la calidad no alcanza.
 whisper_beam_size: 1
