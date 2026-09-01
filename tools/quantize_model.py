@@ -7,8 +7,17 @@ cuantizado ahorra ~800 MB sin cambiar nada de la calidad.
 Uso:  .venv/Scripts/python.exe tools/quantize_model.py
       .venv/Scripts/python.exe tools/quantize_model.py --forzar   (rehace la conversion)
 
-Necesita `transformers`, que NO es dependencia de runtime:
+Necesita `transformers` Y `torch`, que NO son dependencias de runtime (faster-whisper
+no usa ninguna de las dos). OJO: `pip install torch` en Windows baja la rueda con CUDA,
+~2.5 GB, mas de lo que esta herramienta pretende ahorrar. Usar la de CPU:
+
       .venv/Scripts/python.exe -m pip install transformers
+      .venv/Scripts/python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+Y desinstalarlas al terminar (junto con sus huerfanos: sympy, networkx, jinja2,
+mpmath, MarkupSafe):
+
+      .venv/Scripts/python.exe -m pip uninstall -y torch transformers sympy networkx jinja2 mpmath MarkupSafe
 """
 
 from __future__ import annotations
