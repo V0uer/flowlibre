@@ -155,14 +155,14 @@ class Artefacto:
 CUDA = Artefacto(
     nombre="paquete de aceleracion NVIDIA",
     archivo="flowlibre-cuda-2.0.0.zip",
-    sha256="",
+    sha256="bd9c0f6010c9db1bc8c8f5ea5afc8b06bb55977a3b87d61ad65aa8b58aa256cf",
     destino_rel="cuda/flowlibre-cuda.zip",
 )
 
 MODELO_INT8 = Artefacto(
     nombre="modelo de transcripcion (int8)",
     archivo="large-v3-turbo-int8.zip",
-    sha256="",
+    sha256="76c637f846fc0128dfffc6978d1aeeff401944437a4446c4dc13ee0a39728574",
     destino_rel="models/large-v3-turbo-int8.zip",
 )
 

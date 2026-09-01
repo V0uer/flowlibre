@@ -166,5 +166,23 @@ def test_instalar_cuda_descomprime_y_tira_el_zip(datos, monkeypatch):
 
 
 def test_no_baja_1_4_gb_sin_hash_publicado(datos):
+    """La conducta, no el valor de la constante.
+
+    Antes esto miraba descargas.CUDA, y el dia que se publico el release con su
+    hash el test empezo a fallar por la razon equivocada: intentaba bajarse
+    1.3 GB de verdad. Lo que se prueba es que un artefacto SIN hash se niegue.
+    """
+    sin_publicar = descargas.Artefacto(
+        nombre="artefacto de prueba", archivo="x.zip", sha256="",
+        destino_rel="x.zip",
+    )
     with pytest.raises(descargas.DescargaError, match="hash publicado"):
-        descargas.descargar_artefacto(descargas.CUDA)
+        descargas.descargar_artefacto(sin_publicar)
+
+
+def test_los_artefactos_publicados_traen_un_sha256_valido():
+    """Un hash a medias (o de largo equivocado) nunca va a cuadrar, y el sintoma
+    es una descarga de 1.3 GB que se borra sola al terminar, cada vez."""
+    for art in (descargas.CUDA, descargas.MODELO_INT8):
+        assert len(art.sha256) == 64, f"{art.nombre}: hash de largo raro"
+        int(art.sha256, 16)      # revienta si no es hexadecimal
