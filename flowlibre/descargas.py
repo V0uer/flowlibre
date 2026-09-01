@@ -38,7 +38,7 @@ import requests
 from . import paths
 
 # Un solo lugar con el slug del repo: lo leen las descargas y el auto-update.
-GITHUB_REPO = os.environ.get("FLOWLIBRE_REPO", "jorgebarreda/flowlibre")
+GITHUB_REPO = os.environ.get("FLOWLIBRE_REPO", "V0uer/flowlibre")
 
 TROZO = 1 << 20          # 1 MB: suficiente para que el progreso se sienta vivo
 TIMEOUT_S = (10, 60)     # (conectar, leer) — el segundo es generoso a proposito
