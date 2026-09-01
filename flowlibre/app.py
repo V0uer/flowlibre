@@ -23,7 +23,7 @@ def _beep(freq: int, ms: int = 110) -> None:
 class FlowLibreApp:
     def __init__(self) -> None:
         self.config = Config()
-        self.recorder = Recorder(self.config.microphone)
+        self.recorder = self._make_recorder()
         self.transcriber = Transcriber(
             self.config.whisper_model, self.config.whisper_compute_type,
             self.config.whisper_beam_size,
@@ -40,10 +40,20 @@ class FlowLibreApp:
         self._dashboard = None
         self.enabled = True
         self._active_prefix = ""     # prefijo del dictado en curso ("" = dictado normal)
+        self._stream_stt = None      # StreamingTranscriber del dictado en curso
         self.last_injected = ""
         self.status = "listo"           # leído por el tray para el tooltip/ícono
         self.on_status_change = None    # callback que instala el tray
         self._busy = threading.Lock()
+
+    def _make_recorder(self) -> Recorder:
+        """Un solo lugar donde se cablea el troceo: si aqui se cae el on_chunk,
+        la app sigue funcionando pero pierde toda la mejora de latencia sin
+        avisar. Por eso lo construyen por igual __init__ y reload_config()."""
+        return Recorder(
+            self.config.microphone,
+            on_chunk=self._on_chunk if self.config.streaming_stt else None,
+        )
 
     # --- ciclo de vida ---
 
@@ -118,7 +128,7 @@ class FlowLibreApp:
         self.cleaner = None       # se reconstruye al cambiar de motor/modelo/timeout
         if self.hotkeys:
             self.hotkeys.unregister()
-        self.recorder = Recorder(self.config.microphone)
+        self.recorder = self._make_recorder()
         if (self.transcriber.model_name != self.config.whisper_model
                 or self.transcriber.compute_type != self.config.whisper_compute_type
                 or self.transcriber.beam_size != self.config.whisper_beam_size):
@@ -165,6 +175,10 @@ class FlowLibreApp:
             return
         self._active_prefix = prefix
         try:
+            if self.config.streaming_stt:
+                from .stream_stt import StreamingTranscriber
+                lang = None if self.config.language == "auto" else self.config.language
+                self._stream_stt = StreamingTranscriber(self.transcriber, lang)
             self.recorder.start()
             self._set_status("grabando")
             _dbg("grabando (mic abierto)")
@@ -174,15 +188,25 @@ class FlowLibreApp:
             print(f"[FlowLibre] Error al abrir el micrófono: {e}")
             _beep(220, 300)
 
+    def _on_chunk(self, chunk) -> None:
+        """Cada trozo cerrado se manda a transcribir sin esperar a que el
+        usuario suelte la tecla."""
+        if self._stream_stt is not None:
+            self._stream_stt.submit(chunk)
+
     def stop_recording(self) -> None:
         if not self.recorder.recording:
             return
-        audio = self.recorder.stop()
+        audio = self.recorder.stop()          # emite el trozo final via on_chunk
         prefix = self._active_prefix
+        stt = self._stream_stt
+        self._stream_stt = None
         self._set_status("procesando")
         _dbg(f"procesando: {len(audio)} muestras ({len(audio)/16000:.1f}s) prefijo={prefix!r}")
         self.overlay.show_processing()
-        threading.Thread(target=self._process, args=(audio, prefix), daemon=True).start()
+        threading.Thread(
+            target=self._process, args=(audio, prefix, stt), daemon=True
+        ).start()
 
     def _click_cancel(self) -> None:
         """Clic en la X del overlay: descartar el dictado."""
@@ -202,14 +226,40 @@ class FlowLibreApp:
         """Descarta la grabación en curso sin transcribir (toque único suelto)."""
         if not self.recorder.recording:
             return
+        # Soltar el transcriptor ANTES de parar: recorder.stop() emite el trozo
+        # final por on_chunk, y mandarlo a la GPU en un dictado cancelado es
+        # trabajo tirado sobre el recurso que ya estaba en disputa.
+        stt = self._stream_stt
+        self._stream_stt = None
+        if stt is not None:
+            stt.cancel()
         self.recorder.stop()
         self.overlay.hide()
         self._set_status("listo")
 
-    def _process(self, audio, prefix: str = "") -> None:
+    def _process(self, audio, prefix: str = "", stt=None) -> None:
         with self._busy:
             try:
-                self._pipeline(audio, prefix)
+                lang_cfg = None if self.config.language == "auto" else self.config.language
+                text, language = "", ""
+                if stt is not None:
+                    try:
+                        text, language = stt.result()
+                    except Exception as e:
+                        # El streaming fallo, pero el audio completo sigue en
+                        # memoria: retranscribir cuesta segundos, no hacerlo
+                        # cuesta el dictado entero.
+                        _dbg(f"streaming fallo ({type(e).__name__}: {e}); uso el audio completo")
+                        print(f"[FlowLibre] Transcripción por trozos falló ({e}); "
+                              f"reintento con el audio completo.")
+                    if not text and len(audio):
+                        _dbg("streaming devolvió vacío; retranscribo el audio completo")
+                        text, language = self.transcriber.transcribe(audio, lang_cfg)
+                elif len(audio):
+                    text, language = self.transcriber.transcribe(audio, lang_cfg)
+                _dbg(f"whisper devolvió {len(text)} chars: {text[:80]!r}")
+                if text:
+                    self._pipeline(text, language, len(audio) / 16000, prefix)
             except Exception as e:
                 _dbg(f"ERROR en pipeline: {type(e).__name__}: {e}")
                 print(f"[FlowLibre] Error en el pipeline: {e}")
@@ -218,12 +268,9 @@ class FlowLibreApp:
                 self.overlay.hide()
                 self._set_status("listo")
 
-    def _pipeline(self, audio, prefix: str = "") -> None:
-        lang_cfg = None if self.config.language == "auto" else self.config.language
-        raw_text, language = self.transcriber.transcribe(audio, lang_cfg)
-        _dbg(f"whisper devolvió {len(raw_text)} chars: {raw_text[:80]!r}")
-        if not raw_text:
-            return
+    def _pipeline(self, text: str, language: str, audio_duration_s: float,
+                  prefix: str = "") -> None:
+        raw_text = text
 
         # Modo con prefijo (ej. "m!p " de Discord): texto crudo, sin comandos de
         # voz ni limpieza IA; solo se antepone el prefijo tal cual.
@@ -235,7 +282,7 @@ class FlowLibreApp:
                 send_enter()
             self.last_injected = text
             append_entry(raw_text, text, "crudo", language, f"prefijo {prefix.strip()}",
-                         duration_s=len(audio) / 16000)
+                         duration_s=audio_duration_s)
             return
 
         # Comando standalone ("borra eso", "en mayúsculas")
@@ -286,4 +333,4 @@ class FlowLibreApp:
         inject_text(clean_text, self.config.inject_method)
         self.last_injected = clean_text
         append_entry(raw_text, clean_text, mode, language, engine_used,
-                     duration_s=len(audio) / 16000)
+                     duration_s=audio_duration_s)

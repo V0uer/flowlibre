@@ -27,6 +27,7 @@ DEFAULTS = {
     "whisper_model": "large-v3-turbo",
     "whisper_beam_size": 1,
     "whisper_compute_type": "int8_float16",
+    "streaming_stt": True,           # transcribe por trozos mientras hablas
     "ollama_url": "http://localhost:11434",
     "ollama_model": "qwen2.5:14b-instruct",
     "ollama_keep_alive": "5m",
@@ -42,6 +43,7 @@ VALID = {
     "format_mode": {"mensaje", "email", "notas", "crudo"},
     "inject_method": {"clipboard", "typing"},
     "music_send_enter": {True, False},
+    "streaming_stt": {True, False},
 }
 
 

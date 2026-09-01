@@ -41,6 +41,7 @@ class StreamingTranscriber:
         self._detected = ""
         self._error: BaseException | None = None
         self._fin_enviado = False
+        self._cancelled = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -51,7 +52,7 @@ class StreamingTranscriber:
     def _run(self) -> None:
         while True:
             item = self._queue.get()
-            if item is _FIN:
+            if item is _FIN or self._cancelled.is_set():
                 return
             try:
                 texto, idioma = self._transcriber.transcribe(item, self._language)
@@ -66,6 +67,19 @@ class StreamingTranscriber:
                     self._detected = idioma
                 if texto.strip():
                     self._text = merge_overlap(self._text, texto)
+
+    def cancel(self) -> None:
+        """Suelta el dictado a medias: el hilo sale y lo encolado no se transcribe.
+
+        Sin esto, un dictado cancelado deja el hilo consumidor bloqueado para
+        siempre en la cola (uno por cancelacion) y manda a la GPU trozos que
+        nadie va a usar — justo el recurso en disputa que causa la lentitud.
+        El trozo que ya este en vuelo termina; los demas se sueltan.
+        """
+        self._cancelled.set()
+        if not self._fin_enviado:
+            self._fin_enviado = True
+            self._queue.put(_FIN)
 
     def result(self, timeout_s: float = 30.0) -> tuple[str, str]:
         """Espera a que se procese todo lo encolado y devuelve (texto, idioma)."""
