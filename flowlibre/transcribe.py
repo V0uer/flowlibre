@@ -23,6 +23,23 @@ def _add_nvidia_dll_dirs() -> None:
     """
     if sys.platform != "win32":
         return
+
+    def _registrar(bin_dir: Path) -> None:
+        os.add_dll_directory(str(bin_dir))
+        os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+
+    # Primero, el paquete que la app se bajo sola. La version instalada NO trae
+    # DLLs de NVIDIA (por eso el instalador pesa 70.9 MB y no 2 GB): las baja a
+    # %APPDATA%/FlowLibre/cuda/bin la primera vez que detecta una NVIDIA. Si
+    # esto no se mira, la descarga de 1.4 GB es un adorno.
+    try:
+        from .descargas import cuda_dir, cuda_instalado
+
+        if cuda_instalado():
+            _registrar(cuda_dir())
+    except Exception:
+        pass        # nunca impedir que cargue el modelo por no encontrar CUDA
+
     for sp in sys.path:
         nvidia_dir = Path(sp) / "nvidia"
         if not nvidia_dir.is_dir():
@@ -30,8 +47,7 @@ def _add_nvidia_dll_dirs() -> None:
         for sub in nvidia_dir.iterdir():
             bin_dir = sub / "bin"
             if bin_dir.is_dir():
-                os.add_dll_directory(str(bin_dir))
-                os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+                _registrar(bin_dir)
 
 
 class Transcriber:
