@@ -18,6 +18,15 @@ from pathlib import Path
 
 ROOT = Path(SPECPATH).resolve().parent
 
+# La version vive en flowlibre/__init__.py y en ningun otro lado. Se deja aqui en
+# disco para que el .iss la lea: Inno Setup no puede importar Python, y repetir
+# el numero a mano ya nos tenia con el instalador en 2.0.0 y el paquete en 1.0.0
+# — una app recien instalada que se cree vieja y se ofrece actualizar en bucle.
+_ns = {}
+exec((ROOT / "flowlibre" / "__init__.py").read_text(encoding="utf-8"), _ns)
+VERSION = _ns["__version__"]
+(Path(SPECPATH) / "VERSION").write_text(VERSION, encoding="utf-8")
+
 datos = [
     (str(ROOT / "assets" / "icons"), "assets/icons"),
     (str(ROOT / "config.yaml"), "."),

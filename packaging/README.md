@@ -52,11 +52,36 @@ sed -e 's/console=False,.*/console=True,/' -e 's/name="FlowLibre",/name="FlowLib
     packaging/flowlibre.spec > packaging/flowlibre-debug.spec
 ```
 
+## La versión no se escribe aquí
+
+Vive en `flowlibre/__init__.py` y en ningún otro lado. El `.spec` (que es Python
+y corre al construir) la vuelca a `packaging/VERSION`, y el `.iss` la lee de ahí
+con `FileRead`. **No pongas el número a mano en el `.iss`**: hay un test que lo
+prohíbe, porque cuando estaban separados el instalador decía 2.0.0 y el paquete
+1.0.0 — una app recién instalada que se cree vieja y se ofrece actualizar a la
+versión que ya tiene, en bucle, en cada arranque (C43).
+
+## Publicar un release
+
+```bash
+# 1. Los artefactos pesados que NO caben en el instalador, con sus hashes
+.venv/Scripts/python.exe tools/publicar_artefactos.py
+
+# 2. Commitear descargas.py (el script le escribe los sha256 dentro)
+# 3. Etiquetar: el workflow construye, prueba y publica solo
+git tag v2.0.1 && git push origin v2.0.1
+```
+
+Si te saltas el paso 2, la app **se niega** a bajar los artefactos y lo dice en
+el mensaje. Es a propósito: bajar 1.4 GB que no se pueden verificar produce un
+.zip corrupto que se descomprime a medias, y entonces la app abre, se ve
+perfecta y no transcribe (el fallo de C41).
+
 ## Lo que todavía no está
 
 - **Sin firma de código.** Windows mostrará "Windows protegió tu PC" → Más
   información → Ejecutar de todos modos. Va documentado en la página de descarga.
-- **Sin descarga del paquete CUDA** (tarea 6 del plan): hoy el instalador deja la
-  app en modo CPU. En una máquina con NVIDIA hay que apuntarle a un modelo local
-  a mano.
-- **Sin wizard de primer arranque** (tarea 7) ni **auto-update** (tarea 9).
+- **Sin repo remoto.** El auto-update y la página leen GitHub Releases, que
+  todavía no existen: falta crear el repo y subirlo (tarea 9, paso 2).
+- **Sin los assets publicados.** `flowlibre/descargas.py` tiene los `sha256` en
+  blanco hasta que se corra `tools/publicar_artefactos.py` contra un release.
