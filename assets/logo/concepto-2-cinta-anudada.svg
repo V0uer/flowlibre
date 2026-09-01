@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="FlowLibre — cinta anudada">
+  <defs>
+    <linearGradient id="c2grad" x1="32" y1="224" x2="224" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4682F0"/>
+      <stop offset="1" stop-color="#7B5BF0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#c2grad)"/>
+  <!-- Lazo cerrado: la voz que vuelve sobre si misma. Los dos huecos se dejan
+       grandes a proposito; son lo primero que se tapa al bajar a 16 px. -->
+  <path id="c2-marca"
+        d="M128 128 C 104 88, 74 84, 60 104 C 44 126, 62 160, 92 156 C 112 153, 122 140, 128 128
+           C 152 88, 182 84, 196 104 C 212 126, 194 160, 164 156 C 144 153, 134 140, 128 128 Z"
+        fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="FlowLibre — onda fluida">
+  <defs>
+    <linearGradient id="c1grad" x1="40" y1="180" x2="216" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B9CFF"/>
+      <stop offset="1" stop-color="#2E5FE0"/>
+    </linearGradient>
+    <linearGradient id="c1marca" x1="40" y1="180" x2="216" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCE7FF"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#c1grad)"/>
+  <!-- La marca: una cinta continua que sube. Trazo grueso y remates redondos
+       para que a 16 px siga siendo una S legible y no una linea rota. -->
+  <path id="c1-marca" d="M52 174 C 52 116, 96 100, 128 128 S 204 140, 204 82"
+        fill="none" stroke="url(#c1marca)" stroke-width="34" stroke-linecap="round"/>
+</svg>

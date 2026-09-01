@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="FlowLibre — gota sonora">
+  <defs>
+    <linearGradient id="c3grad" x1="48" y1="40" x2="208" y2="216" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3E78E8"/>
+      <stop offset="1" stop-color="#1E3F9E"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#c3grad)"/>
+  <!-- Gota solida: la silueta aguanta sola a 16 px. Las ondas concentricas son
+       el detalle que se pierde a ese tamano, y esta bien que se pierda. -->
+  <path id="c3-marca" d="M104 46 C 104 46, 168 112, 168 156 A 64 64 0 0 1 40 156 C 40 112, 104 46, 104 46 Z"
+        fill="#FFFFFF"/>
+  <g stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.92">
+    <path d="M188 96 A 56 56 0 0 1 188 176"/>
+    <path d="M214 74 A 92 92 0 0 1 214 198"/>
+  </g>
+</svg>
