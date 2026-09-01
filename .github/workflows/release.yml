@@ -58,7 +58,13 @@ jobs:
         run: python -m pytest tests/ -q
 
       - name: Bundle
-        run: python -m PyInstaller packaging/flowlibre.spec --noconfirm
+        # --distpath/--workpath NO son opcionales: el .iss busca en
+        # packaging/dist/FlowLibre, y sin ellos PyInstaller escribe en dist/ de
+        # la raiz y el instalador aborta con "No files found matching".
+        # Es el mismo comando que packaging/README.md.
+        run: >
+          python -m PyInstaller packaging/flowlibre.spec --noconfirm
+          --distpath packaging/dist --workpath packaging/build
 
       - name: Instalador
         shell: pwsh
