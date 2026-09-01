@@ -34,7 +34,10 @@ datos = [
     # un modelo local que en su maquina no existe — que faster-whisper le pide a
     # Hugging Face como si fuera un repo, con un 401 que mata el hilo de carga
     # sin que nadie lo vea. Lo caza tests/test_plantilla_config.py.
-    (str(ROOT / "packaging" / "config.plantilla.yaml"), "."),
+    # OJO: el segundo elemento es el DIRECTORIO destino, no el nombre. El archivo
+    # conserva su nombre, y sembrar() busca exactamente "config.yaml" — por eso
+    # la plantilla vive en packaging/plantilla/ y no se llama config.plantilla.yaml.
+    (str(ROOT / "packaging" / "plantilla" / "config.yaml"), "."),
     (str(ROOT / "commands.json"), "."),
     (str(ROOT / "dictionary.txt"), "."),
 ]

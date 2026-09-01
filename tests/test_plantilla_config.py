@@ -17,12 +17,12 @@ from pathlib import Path
 import yaml
 
 RAIZ = Path(__file__).resolve().parent.parent
-PLANTILLA = RAIZ / "packaging" / "config.plantilla.yaml"
+PLANTILLA = RAIZ / "packaging" / "plantilla" / "config.yaml"
 
 
 def test_el_spec_empaqueta_la_plantilla_y_no_el_config_real():
     spec = (RAIZ / "packaging" / "flowlibre.spec").read_text(encoding="utf-8")
-    assert "config.plantilla.yaml" in spec
+    assert 'plantilla" / "config.yaml' in spec.replace("'", '"')
     assert not re.search(r'ROOT\s*/\s*"config\.yaml"', spec), \
         "el bundle volvio a llevarse el config.yaml de desarrollo"
 
@@ -50,3 +50,16 @@ def test_la_plantilla_es_valida_para_la_app():
     datos = yaml.safe_load(PLANTILLA.read_text(encoding="utf-8"))
     desconocidas = set(datos) - set(DEFAULTS)
     assert not desconocidas, f"claves que la app ignora: {desconocidas}"
+
+
+def test_la_plantilla_se_llama_config_yaml():
+    """PyInstaller NO renombra: el segundo elemento de `datas` es el directorio
+    destino, no el nombre. Con el archivo llamado `config.plantilla.yaml` llegaba
+    al bundle con ese nombre, y sembrar() busca "config.yaml" exacto: no sembraba
+    nada, sin un solo error. La app arrancaba con los defaults y el usuario nunca
+    veia la configuracion comentada que se supone que trae la instalacion.
+    """
+    from flowlibre.paths import SEMILLAS
+
+    assert PLANTILLA.name == "config.yaml"
+    assert PLANTILLA.name in SEMILLAS
