@@ -16,6 +16,8 @@ parcial.
 
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_data_files
+
 ROOT = Path(SPECPATH).resolve().parent
 
 # La version vive en flowlibre/__init__.py y en ningun otro lado. Se deja aqui en
@@ -41,6 +43,12 @@ datos = [
     (str(ROOT / "commands.json"), "."),
     (str(ROOT / "dictionary.txt"), "."),
 ]
+
+# Mismo motivo que en flowlibre.spec: sin esto el bundle sale sin
+# `faster_whisper/assets/silero_vad_v6.onnx` y no transcribe. Va aqui tambien
+# porque este build es el que se usa para diagnosticar: si no lleva lo mismo que
+# el real, no reproduce lo que se quiere mirar.
+datos += collect_data_files("faster_whisper")
 
 # Lo que NO va en el instalador base.
 # OJO con `av` (PyAV, 67 MB): el spec lo daba por excluible porque FlowLibre le

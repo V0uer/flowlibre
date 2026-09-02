@@ -16,6 +16,8 @@ parcial.
 
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_data_files
+
 ROOT = Path(SPECPATH).resolve().parent
 
 # La version vive en flowlibre/__init__.py y en ningun otro lado. Se deja aqui en
@@ -41,6 +43,15 @@ datos = [
     (str(ROOT / "commands.json"), "."),
     (str(ROOT / "dictionary.txt"), "."),
 ]
+
+# El modelo de VAD que faster-whisper carga desde su propio paquete
+# (`faster_whisper/assets/silero_vad_v6.onnx`, 1.2 MB). PyInstaller solo arrastra
+# modulos de Python: un .onnx que vive dentro del site-packages no lo ve nadie, y
+# sin hook propio el paquete llega al bundle sin su carpeta `assets/`.
+# Es el mismo modo de fallo que `av`: compila sin un error, la app abre, graba el
+# microfono, y muere al transcribir con NO_SUCHFILE en un hilo de fondo que con
+# console=False no imprime nada. Asi salio el instalador de la v2.0.0.
+datos += collect_data_files("faster_whisper")
 
 # Lo que NO va en el instalador base.
 # OJO con `av` (PyAV, 67 MB): el spec lo daba por excluible porque FlowLibre le
