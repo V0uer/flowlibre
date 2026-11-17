@@ -7,11 +7,43 @@
 
 from __future__ import annotations
 
+import ctypes
 import time
 
 import keyboard
 import win32clipboard
 import win32con
+
+_VK_LWIN = 0x5B
+_VK_RWIN = 0x5C
+
+# Cuanto se espera, como mucho, a que el autor suelte la tecla Windows antes de
+# pegar. Pasado el plazo se pega igual: perder el dictado es peor que el
+# selector de sonido que Windows abre con Win+Ctrl+V.
+ESPERA_MAX_TECLA_WINDOWS_S = 2.0
+
+
+def _tecla_windows_presionada() -> bool:
+    """Estado FISICO de las dos teclas Windows, no el que lleva `keyboard`."""
+    user32 = ctypes.windll.user32
+    return bool(user32.GetAsyncKeyState(_VK_LWIN) & 0x8000
+                or user32.GetAsyncKeyState(_VK_RWIN) & 0x8000)
+
+
+def esperar_tecla_windows_suelta() -> None:
+    """Bloquea hasta que no haya ninguna tecla Windows abajo (o venza el plazo).
+
+    El atajo por defecto es "windows+ctrl". Con dictados cortos el texto llega
+    en milisegundos, a veces antes de que el autor suelte Windows; entonces la
+    tecla sintetica se combina con la fisica. Un Ctrl+V se vuelve Win+Ctrl+V
+    (selector de salida de sonido, y no pega nada), y una letra tecleada se
+    vuelve un atajo de Windows. Por eso se espera antes de CUALQUIER tecla.
+    """
+    deadline = time.perf_counter() + ESPERA_MAX_TECLA_WINDOWS_S
+    while _tecla_windows_presionada():
+        if time.perf_counter() >= deadline:
+            return
+        time.sleep(0.01)
 
 
 def _get_clipboard_text() -> str | None:
@@ -66,6 +98,7 @@ def _restore_clipboard(original: str | None) -> None:
 def inject_text(text: str, method: str = "clipboard") -> None:
     if not text:
         return
+    esperar_tecla_windows_suelta()
     if method == "typing":
         keyboard.write(text, delay=0.005)
         return
@@ -103,6 +136,7 @@ def send_enter() -> None:
 
 def delete_chars(count: int) -> None:
     """Envía `count` retrocesos (para el comando de voz 'borra eso')."""
+    esperar_tecla_windows_suelta()
     for _ in range(count):
         keyboard.send("backspace")
         time.sleep(0.002)

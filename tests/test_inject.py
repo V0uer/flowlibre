@@ -135,3 +135,90 @@ def test_inject_text_without_original_clipboard_skips_restore(monkeypatch):
     # no habia portapapeles original -> una sola llamada a _set_clipboard_text
     # (la que pega el texto dictado), ninguna de restauracion
     assert [c for c in calls if c[0] == "set"] == [("set", "hola mundo")]
+
+
+# --- La tecla Windows del atajo todavia abajo al momento de pegar ---
+#
+# El atajo por defecto es "windows+ctrl". Si el texto llega antes de que el
+# autor suelte Windows, el Ctrl+V sintetico se combina con esa tecla fisica:
+# Windows recibe Win+Ctrl+V, abre el selector de salida de sonido y el texto
+# no se pega. Antes de mandar cualquier tecla hay que esperar a que se suelte.
+
+
+def _parchar_teclas(monkeypatch, calls):
+    monkeypatch.setattr(inject, "_get_clipboard_text", lambda: None)
+    monkeypatch.setattr(inject, "_set_clipboard_text", lambda t: None)
+    monkeypatch.setattr(inject, "wait_for_clipboard", lambda expected, timeout_s=None: True)
+    monkeypatch.setattr(inject.keyboard, "send", lambda combo: calls.append(("send", combo)))
+    monkeypatch.setattr(inject.keyboard, "write", lambda t, delay=0: calls.append(("write", t)))
+    monkeypatch.setattr(inject.time, "sleep", lambda s: None)
+
+
+def test_inject_text_espera_a_que_se_suelte_windows_antes_de_pegar(monkeypatch):
+    calls = []
+    estados = iter([True, True, False])
+
+    def fake_presionada():
+        valor = next(estados, False)
+        calls.append(("windows abajo", valor))
+        return valor
+
+    _parchar_teclas(monkeypatch, calls)
+    monkeypatch.setattr(inject, "_tecla_windows_presionada", fake_presionada)
+
+    inject.inject_text("hola mundo")
+
+    assert ("send", "ctrl+v") in calls
+    pegado = calls.index(("send", "ctrl+v"))
+    soltada = calls.index(("windows abajo", False))
+    assert soltada < pegado
+    # no se consulto ni una vez mas despues de pegar: la espera va antes
+    assert not any(c[0] == "windows abajo" for c in calls[pegado:])
+
+
+def test_inject_text_no_se_cuelga_si_windows_nunca_se_suelta(monkeypatch):
+    calls = []
+    _parchar_teclas(monkeypatch, calls)
+    monkeypatch.setattr(inject, "_tecla_windows_presionada", lambda: True)
+    monkeypatch.setattr(inject, "ESPERA_MAX_TECLA_WINDOWS_S", 0.05)
+
+    t = time.perf_counter()
+    inject.inject_text("hola mundo")
+
+    # se rinde al plazo y pega de todos modos: perder el dictado es peor
+    assert time.perf_counter() - t < 1.0
+    assert ("send", "ctrl+v") in calls
+
+
+def test_el_modo_typing_tambien_espera_a_windows(monkeypatch):
+    calls = []
+    estados = iter([True, False])
+
+    def fake_presionada():
+        valor = next(estados, False)
+        calls.append(("windows abajo", valor))
+        return valor
+
+    _parchar_teclas(monkeypatch, calls)
+    monkeypatch.setattr(inject, "_tecla_windows_presionada", fake_presionada)
+
+    inject.inject_text("hola", method="typing")
+
+    assert calls.index(("windows abajo", False)) < calls.index(("write", "hola"))
+
+
+def test_delete_chars_espera_a_windows(monkeypatch):
+    calls = []
+    estados = iter([True, False])
+
+    def fake_presionada():
+        valor = next(estados, False)
+        calls.append(("windows abajo", valor))
+        return valor
+
+    _parchar_teclas(monkeypatch, calls)
+    monkeypatch.setattr(inject, "_tecla_windows_presionada", fake_presionada)
+
+    inject.delete_chars(2)
+
+    assert calls.index(("windows abajo", False)) < calls.index(("send", "backspace"))
